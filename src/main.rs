@@ -4,7 +4,10 @@ const GRID: usize = 10;
 const CELL: f32 = 2.0;
 const FIELD_HALF: f32 = GRID as f32 * CELL / 2.0;
 const GROW_TIME: f32 = 18.0;
-const MOVE_SPEED: f32 = 5.0;
+const MOVE_LERP: f32 = 16.0;
+const CAM_SMOOTH: f32 = 8.0;
+const STEP_REPEAT: f32 = 0.18;
+const CAM_OFFSET: Vec3 = vec3(12.0, 16.0, 12.0);
 
 #[derive(Clone, Copy, PartialEq)]
 enum CellState {
@@ -20,14 +23,23 @@ struct DirtParticle {
 }
 
 struct Farmer {
+    grid_x: usize,
+    grid_z: usize,
     position: Vec3,
-    yaw: f32,
+    facing: f32,
     plowing: bool,
+    step_cooldown: f32,
+}
+
+struct CameraState {
+    position: Vec3,
+    target: Vec3,
 }
 
 struct Game {
     field: [[CellState; GRID]; GRID],
     farmer: Farmer,
+    camera: CameraState,
     dirt: Vec<DirtParticle>,
     seeds: u32,
     potatoes: u32,
@@ -36,12 +48,24 @@ struct Game {
 
 impl Game {
     fn new() -> Self {
+        let start_x = GRID / 2;
+        let start_z = GRID / 2;
+        let start_pos = Self::cell_center(start_x, start_z);
+        let cam_target = start_pos + vec3(0.0, 0.6, 0.0);
+
         Self {
             field: [[CellState::Grass; GRID]; GRID],
             farmer: Farmer {
-                position: vec3(0.0, 0.0, 0.0),
-                yaw: 0.0,
+                grid_x: start_x,
+                grid_z: start_z,
+                position: start_pos,
+                facing: 0.0,
                 plowing: false,
+                step_cooldown: 0.0,
+            },
+            camera: CameraState {
+                position: cam_target + CAM_OFFSET,
+                target: cam_target,
             },
             dirt: Vec::new(),
             seeds: 24,
@@ -56,24 +80,6 @@ impl Game {
             0.0,
             -FIELD_HALF + grid_z as f32 * CELL + CELL / 2.0,
         )
-    }
-
-    fn world_to_cell(pos: Vec3) -> Option<(usize, usize)> {
-        let local_x = pos.x + FIELD_HALF;
-        let local_z = pos.z + FIELD_HALF;
-        if local_x < 0.0 || local_z < 0.0 {
-            return None;
-        }
-        let gx = (local_x / CELL) as usize;
-        let gz = (local_z / CELL) as usize;
-        if gx >= GRID || gz >= GRID {
-            return None;
-        }
-        Some((gx, gz))
-    }
-
-    fn farmer_cell(&self) -> Option<(usize, usize)> {
-        Self::world_to_cell(self.farmer.position)
     }
 
     fn spawn_dirt(&mut self, pos: Vec3) {
@@ -121,63 +127,95 @@ impl Game {
         false
     }
 
+    fn at_cell_center(&self) -> bool {
+        let target = Self::cell_center(self.farmer.grid_x, self.farmer.grid_z);
+        self.farmer.position.distance(target) < 0.08
+    }
+
+    fn try_step(&mut self, dx: i32, dz: i32) -> bool {
+        let nx = self.farmer.grid_x as i32 + dx;
+        let nz = self.farmer.grid_z as i32 + dz;
+        if nx < 0 || nz < 0 || nx >= GRID as i32 || nz >= GRID as i32 {
+            return false;
+        }
+
+        self.farmer.grid_x = nx as usize;
+        self.farmer.grid_z = nz as usize;
+        self.farmer.facing = (dx as f32).atan2(dz as f32);
+        self.farmer.step_cooldown = STEP_REPEAT;
+        true
+    }
+
+    fn handle_movement_input(&mut self) {
+        if !self.at_cell_center() {
+            return;
+        }
+
+        if self.farmer.step_cooldown > 0.0 {
+            return;
+        }
+
+        let mut dx = 0i32;
+        let mut dz = 0i32;
+
+        // W moves toward the top of the screen (camera sits at +X, +Z).
+        if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) {
+            dz -= 1;
+        }
+        if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) {
+            dz += 1;
+        }
+        if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) {
+            dx -= 1;
+        }
+        if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) {
+            dx += 1;
+        }
+
+        // One tile at a time — prefer forward/back over strafe.
+        if dx != 0 && dz != 0 {
+            dx = 0;
+        }
+
+        if dx != 0 || dz != 0 {
+            self.try_step(dx, dz);
+        }
+    }
+
     fn update(&mut self, dt: f32) {
         self.action_cooldown = (self.action_cooldown - dt).max(0.0);
+        self.farmer.step_cooldown = (self.farmer.step_cooldown - dt).max(0.0);
 
-        let mut move_dir = vec3(0.0, 0.0, 0.0);
-        if is_key_down(KeyCode::W) {
-            move_dir.z -= 1.0;
-        }
-        if is_key_down(KeyCode::S) {
-            move_dir.z += 1.0;
-        }
-        if is_key_down(KeyCode::A) {
-            move_dir.x -= 1.0;
-        }
-        if is_key_down(KeyCode::D) {
-            move_dir.x += 1.0;
-        }
+        self.handle_movement_input();
 
-        if move_dir.length_squared() > 0.0 {
-            move_dir = move_dir.normalize();
-            self.farmer.yaw = move_dir.x.atan2(move_dir.z);
-            self.farmer.position += move_dir * MOVE_SPEED * dt;
-        }
-
-        let margin = 0.4;
-        self.farmer.position.x = self
-            .farmer
-            .position
-            .x
-            .clamp(-FIELD_HALF + margin, FIELD_HALF - margin);
-        self.farmer.position.z = self
-            .farmer
-            .position
-            .z
-            .clamp(-FIELD_HALF + margin, FIELD_HALF - margin);
+        let target = Self::cell_center(self.farmer.grid_x, self.farmer.grid_z);
+        self.farmer.position = self.farmer.position.lerp(target, dt * MOVE_LERP);
         self.farmer.position.y = 0.0;
 
         self.farmer.plowing = is_key_down(KeyCode::Space);
 
-        if self.farmer.plowing {
-            if let Some((gx, gz)) = self.farmer_cell() {
-                self.plow_cell(gx, gz);
+        if self.farmer.plowing && self.at_cell_center() {
+            self.plow_cell(self.farmer.grid_x, self.farmer.grid_z);
+        }
+
+        if is_key_pressed(KeyCode::E) && self.action_cooldown <= 0.0 && self.at_cell_center() {
+            let gx = self.farmer.grid_x;
+            let gz = self.farmer.grid_z;
+            let planted = self.plant_cell(gx, gz);
+            let harvested = if !planted {
+                self.harvest_cell(gx, gz)
+            } else {
+                false
+            };
+            if planted || harvested {
+                self.action_cooldown = 0.25;
             }
         }
 
-        if is_key_pressed(KeyCode::E) && self.action_cooldown <= 0.0 {
-            if let Some((gx, gz)) = self.farmer_cell() {
-                let planted = self.plant_cell(gx, gz);
-                let harvested = if !planted {
-                    self.harvest_cell(gx, gz)
-                } else {
-                    false
-                };
-                if planted || harvested {
-                    self.action_cooldown = 0.25;
-                }
-            }
-        }
+        let desired_target = self.farmer.position + vec3(0.0, 0.6, 0.0);
+        let t = 1.0 - (-CAM_SMOOTH * dt).exp();
+        self.camera.target = self.camera.target.lerp(desired_target, t);
+        self.camera.position = self.camera.target + CAM_OFFSET;
 
         for row in self.field.iter_mut() {
             for cell in row.iter_mut() {
@@ -217,6 +255,14 @@ fn draw_field(game: &Game) {
                 None,
                 soil,
             );
+
+            if gx != game.farmer.grid_x || gz != game.farmer.grid_z {
+                draw_cube_wires(
+                    center + vec3(0.0, 0.01, 0.0),
+                    vec3(CELL * 0.98, 0.02, CELL * 0.98),
+                    Color::from_rgba(255, 255, 255, 40),
+                );
+            }
 
             if let CellState::Planted { growth } = state {
                 draw_potato_plant(center, growth);
@@ -282,7 +328,7 @@ fn draw_potato_plant(center: Vec3, growth: f32) {
 
 fn draw_farmer_3d(farmer: &Farmer) {
     let pos = farmer.position;
-    let forward = vec3(farmer.yaw.sin(), 0.0, farmer.yaw.cos());
+    let forward = vec3(farmer.facing.sin(), 0.0, farmer.facing.cos());
     let right = vec3(forward.z, 0.0, -forward.x);
 
     draw_cylinder(
@@ -327,6 +373,12 @@ fn draw_farmer_3d(farmer: &Farmer) {
         Color::from_rgba(230, 180, 140, 255),
     );
 
+    draw_line_3d(
+        pos + vec3(0.0, 1.05, 0.0),
+        pos + forward * 0.9 + vec3(0.0, 1.05, 0.0),
+        RED,
+    );
+
     if farmer.plowing {
         let plow_pos = pos + forward * 0.9 + vec3(0.0, 0.12, 0.0);
         draw_cube(
@@ -343,28 +395,36 @@ fn draw_farmer_3d(farmer: &Farmer) {
     }
 }
 
-fn draw_scene(game: &Game) {
-    let sky = Color::from_rgba(135, 200, 245, 255);
-    clear_background(sky);
+fn draw_current_tile_marker(game: &Game) {
+    let center = Game::cell_center(game.farmer.grid_x, game.farmer.grid_z);
+    draw_cube_wires(
+        center + vec3(0.0, 0.5, 0.0),
+        vec3(CELL * 0.92, 1.0, CELL * 0.92),
+        YELLOW,
+    );
+    draw_cylinder(
+        center + vec3(0.0, 0.55, 0.0),
+        0.04,
+        0.04,
+        1.1,
+        None,
+        Color::from_rgba(255, 220, 0, 200),
+    );
+}
 
-    let cam_target = game.farmer.position + vec3(0.0, 1.0, 0.0);
-    let cam_pos = cam_target
-        + vec3(
-            -game.farmer.yaw.sin() * 10.0,
-            9.0,
-            -game.farmer.yaw.cos() * 10.0,
-        );
+fn draw_scene(game: &Game) {
+    clear_background(Color::from_rgba(135, 200, 245, 255));
 
     set_camera(&Camera3D {
-        position: cam_pos,
+        position: game.camera.position,
         up: vec3(0.0, 1.0, 0.0),
-        target: cam_target,
-        fovy: 55.0,
+        target: game.camera.target,
+        fovy: 22.0,
+        projection: Projection::Orthographics,
         ..Default::default()
     });
 
     draw_grid(GRID as u32, CELL, Color::from_rgba(40, 40, 40, 80), GRAY);
-
     draw_field(game);
 
     for particle in &game.dirt {
@@ -377,18 +437,14 @@ fn draw_scene(game: &Game) {
         );
     }
 
+    draw_current_tile_marker(game);
     draw_farmer_3d(&game.farmer);
-
-    if let Some((gx, gz)) = game.farmer_cell() {
-        let highlight = Game::cell_center(gx, gz) + vec3(0.0, 0.02, 0.0);
-        draw_cube_wires(highlight, vec3(CELL * 0.98, 0.05, CELL * 0.98), YELLOW);
-    }
 
     set_default_camera();
 }
 
 fn draw_hud(game: &Game) {
-    draw_text("WASD - Move", 16.0, 28.0, 22.0, BLACK);
+    draw_text("WASD / Arrows - Move one tile", 16.0, 28.0, 22.0, BLACK);
     draw_text("SPACE (hold) - Plow field", 16.0, 54.0, 22.0, BLACK);
     draw_text("E - Plant potato / Harvest", 16.0, 80.0, 22.0, BLACK);
     draw_text(
@@ -398,20 +454,31 @@ fn draw_hud(game: &Game) {
         26.0,
         DARKBLUE,
     );
+    draw_text(
+        &format!(
+            "Tile: ({}, {})   Red line = facing",
+            game.farmer.grid_x + 1,
+            game.farmer.grid_z + 1
+        ),
+        16.0,
+        142.0,
+        22.0,
+        DARKGRAY,
+    );
 
-    if let Some((gx, gz)) = game.farmer_cell() {
-        let status = match game.field[gx][gz] {
-            CellState::Grass => "Grass - hold SPACE to plow".to_string(),
-            CellState::Plowed => "Plowed - press E to plant".to_string(),
-            CellState::Planted { growth } if growth >= 1.0 => {
-                "Ready! - press E to harvest".to_string()
-            }
-            CellState::Planted { growth } => {
-                format!("Growing... {}%", (growth * 100.0) as u32)
-            }
-        };
-        draw_text(&status, 16.0, 148.0, 22.0, DARKGREEN);
-    }
+    let gx = game.farmer.grid_x;
+    let gz = game.farmer.grid_z;
+    let status = match game.field[gx][gz] {
+        CellState::Grass => "Grass - hold SPACE to plow".to_string(),
+        CellState::Plowed => "Plowed - press E to plant".to_string(),
+        CellState::Planted { growth } if growth >= 1.0 => {
+            "Ready! - press E to harvest".to_string()
+        }
+        CellState::Planted { growth } => {
+            format!("Growing... {}%", (growth * 100.0) as u32)
+        }
+    };
+    draw_text(&status, 16.0, 172.0, 22.0, DARKGREEN);
 }
 
 #[macroquad::main("Nigga Farmer")]
