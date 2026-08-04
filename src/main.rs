@@ -6,16 +6,16 @@ const FIELD_HALF: f32 = GRID as f32 * CELL / 2.0; // 20.0
 
 const GROW_TIME: f32 = 18.0;
 
-const MOVE_LERP: f32 = 16.0;
+// Movement speed in units per second (constant, non-janky speed)
+const MOVE_SPEED: f32 = 10.0;
 const CAM_SMOOTH: f32 = 8.0;
 
 // Wider camera to view the full field and shacks
 const CAM_OFFSET: Vec3 = vec3(22.0, 28.0, 22.0);
 
-const STEP_REPEAT: f32 = 0.18;
+const STEP_REPEAT: f32 = 0.12;
 
 // Seed station position moved closer to western grid edge (x = -19.0 is edge cell)
-// Position -21.2 allows easy access when standing on western grid edge!
 const SEED_STATION_POS: Vec3 = vec3(-FIELD_HALF - 1.2, 0.0, 0.0);
 const WATCHTOWER_POS: Vec3 = vec3(FIELD_HALF + 2.5, 0.0, -FIELD_HALF - 2.0);
 
@@ -220,9 +220,10 @@ impl Game {
         true
     }
 
-    fn at_cell_center(&self) -> bool {
+    // Distance to target cell center
+    fn distance_to_cell_center(&self) -> f32 {
         let target = Self::cell_center(self.farmer.grid_x, self.farmer.grid_z);
-        self.farmer.position.distance(target) < 0.08
+        self.farmer.position.distance(target)
     }
 
     fn try_step(&mut self, dx: i32, dz: i32) -> bool {
@@ -242,11 +243,8 @@ impl Game {
     }
 
     fn handle_movement_input(&mut self) {
-        if !self.at_cell_center() {
-            return;
-        }
-
-        if self.farmer.step_cooldown > 0.0 {
+        // Allow responsive queueing when nearing destination cell for buttery smooth continuous movement
+        if self.distance_to_cell_center() > 0.25 {
             return;
         }
 
@@ -282,13 +280,21 @@ impl Game {
 
         self.handle_movement_input();
 
+        // Buttery smooth constant velocity movement towards target cell
         let target = Self::cell_center(self.farmer.grid_x, self.farmer.grid_z);
-        self.farmer.position = self.farmer.position.lerp(target, dt * MOVE_LERP);
+        let to_target = target - self.farmer.position;
+        let dist = to_target.length();
+        if dist > 0.001 {
+            let step = (MOVE_SPEED * dt).min(dist);
+            self.farmer.position += to_target.normalize() * step;
+        } else {
+            self.farmer.position = target;
+        }
         self.farmer.position.y = 0.0;
 
         self.farmer.plowing = is_key_down(KeyCode::Space);
 
-        if self.farmer.plowing && self.at_cell_center() {
+        if self.farmer.plowing && self.distance_to_cell_center() < 0.3 {
             self.plow_cell(self.farmer.grid_x, self.farmer.grid_z);
         }
 
@@ -296,7 +302,7 @@ impl Game {
             if self.near_seed_station() {
                 self.convert_potatoes();
                 self.action_cooldown = 0.4;
-            } else if self.at_cell_center() {
+            } else {
                 let gx = self.farmer.grid_x;
                 let gz = self.farmer.grid_z;
 
@@ -346,7 +352,7 @@ impl Game {
     }
 }
 
-// Draw realistic detailed textured soil & field
+// Draw high-performance realistic detailed textured soil & field
 fn draw_field(game: &Game) {
     for gx in 0..GRID {
         for gz in 0..GRID {
@@ -371,7 +377,7 @@ fn draw_field(game: &Game) {
                     );
 
                     // Small grass tufts on some tiles
-                    if cell_hash(gx, gz, 1) > 0.6 {
+                    if cell_hash(gx, gz, 1) > 0.7 {
                         let tuft_x = (cell_hash(gx, gz, 2) - 0.5) * 1.2;
                         let tuft_z = (cell_hash(gx, gz, 3) - 0.5) * 1.2;
                         draw_cylinder(
@@ -400,15 +406,14 @@ fn draw_field(game: &Game) {
                         base_color,
                     );
 
-                    // Draw 5 parallel tilled soil furrows/mounds along Z axis for realistic 3D plowed texture
-                    let num_furrows = 5;
+                    // Optimized 3 parallel tilled soil furrows for high FPS and crisp 3D texture
+                    let num_furrows = 3;
                     let furrow_w = (CELL * 0.92) / num_furrows as f32;
                     for i in 0..num_furrows {
                         let offset_x =
                             -FIELD_HALF + (gx as f32 * CELL) + (i as f32 + 0.5) * furrow_w;
                         let pos = vec3(offset_x, 0.02, center.z);
 
-                        // Alternate ridge top and trough shading for 3D depth
                         let noise = cell_hash(gx, gz, i as u32 + 10);
                         let r = (90.0 + noise * 30.0 - if is_planted { 15.0 } else { 0.0 }) as u8;
                         let g = (55.0 + noise * 20.0 - if is_planted { 10.0 } else { 0.0 }) as u8;
@@ -418,32 +423,20 @@ fn draw_field(game: &Game) {
                         // Ridge mound
                         draw_cube(
                             pos,
-                            vec3(furrow_w * 0.75, 0.1, CELL * 0.94),
+                            vec3(furrow_w * 0.8, 0.1, CELL * 0.94),
                             None,
                             ridge_color,
                         );
-
-                        // Dark shadow trough between furrows
-                        if i < num_furrows - 1 {
-                            let trough_pos = vec3(offset_x + furrow_w * 0.5, -0.01, center.z);
-                            draw_cube(
-                                trough_pos,
-                                vec3(furrow_w * 0.25, 0.06, CELL * 0.94),
-                                None,
-                                Color::from_rgba(35, 20, 10, 255),
-                            );
-                        }
                     }
 
-                    // Scatter detailed soil clods & small dirt rocks across the plowed tile
-                    let clod_count = 6;
-                    for c in 0..clod_count {
+                    // Optimized soil clods (3 per tile for performance)
+                    for c in 0..3 {
                         let h_x = cell_hash(gx, gz, 20 + c * 3);
                         let h_z = cell_hash(gx, gz, 21 + c * 3);
                         let h_s = cell_hash(gx, gz, 22 + c * 3);
 
-                        let clod_pos = center + vec3((h_x - 0.5) * 1.6, 0.07, (h_z - 0.5) * 1.6);
-                        let clod_size = vec3(0.1 + h_s * 0.14, 0.06 + h_s * 0.08, 0.1 + h_s * 0.14);
+                        let clod_pos = center + vec3((h_x - 0.5) * 1.5, 0.07, (h_z - 0.5) * 1.5);
+                        let clod_size = vec3(0.12 + h_s * 0.14, 0.07 + h_s * 0.08, 0.12 + h_s * 0.14);
 
                         let clod_r = (70.0 + h_s * 45.0) as u8;
                         let clod_g = (42.0 + h_s * 30.0) as u8;
@@ -456,15 +449,6 @@ fn draw_field(game: &Game) {
                         );
                     }
                 }
-            }
-
-            // Grid cell highlight boundary
-            if gx != game.farmer.grid_x || gz != game.farmer.grid_z {
-                draw_cube_wires(
-                    center + vec3(0.0, 0.01, 0.0),
-                    vec3(CELL * 0.98, 0.02, CELL * 0.98),
-                    Color::from_rgba(255, 255, 255, 30),
-                );
             }
 
             // Draw crop if planted
