@@ -17,6 +17,12 @@ pub struct Game {
     pub status_msg: String,
     pub air_event: AirEvent,
     pub houses: Vec<HouseBounds>,
+    // New Tycoon & Defense Features
+    pub turrets_unlocked: bool,
+    pub turrets: Vec<Turret>,
+    pub children: Vec<ThiefChild>,
+    pub steal_timer: f32,
+    pub turret_bullets: Vec<BulletParticle>,
 }
 
 impl Game {
@@ -60,6 +66,11 @@ impl Game {
                 bullets: Vec::new(),
             },
             houses,
+            turrets_unlocked: false,
+            turrets: Vec::new(),
+            children: Vec::new(),
+            steal_timer: 0.0,
+            turret_bullets: Vec::new(),
         };
 
         if std::path::Path::new(SAVE_FILE).exists() {
@@ -68,6 +79,15 @@ impl Game {
         }
 
         game
+    }
+
+    pub fn setup_turrets(&mut self) {
+        self.turrets.clear();
+        // 4 Corner Defense Turrets around the Field
+        self.turrets.push(Turret { position: vec3(-FIELD_HALF - 1.5, 0.0, -FIELD_HALF - 1.5), fire_cooldown: 0.0 });
+        self.turrets.push(Turret { position: vec3(FIELD_HALF + 1.5, 0.0, -FIELD_HALF - 1.5), fire_cooldown: 0.0 });
+        self.turrets.push(Turret { position: vec3(-FIELD_HALF - 1.5, 0.0, FIELD_HALF + 1.5), fire_cooldown: 0.0 });
+        self.turrets.push(Turret { position: vec3(FIELD_HALF + 1.5, 0.0, FIELD_HALF + 1.5), fire_cooldown: 0.0 });
     }
 
     pub fn generate_houses(houses: &mut Vec<HouseBounds>) {
@@ -147,6 +167,7 @@ impl Game {
             farmer_grid_x: self.farmer.grid_x,
             farmer_grid_z: self.farmer.grid_z,
             field: field_save,
+            turrets_unlocked: self.turrets_unlocked,
         };
 
         if let Ok(json) = serde_json::to_string_pretty(&save_data) {
@@ -170,6 +191,10 @@ impl Game {
                     self.farmer.grid_x = data.farmer_grid_x;
                     self.farmer.grid_z = data.farmer_grid_z;
                     self.farmer.position = Self::grid_to_world(self.farmer.grid_x, self.farmer.grid_z);
+                    self.turrets_unlocked = data.turrets_unlocked;
+                    if self.turrets_unlocked {
+                        self.setup_turrets();
+                    }
 
                     for (gx, row) in data.field.iter().enumerate().take(GRID) {
                         for (gz, cell) in row.iter().enumerate().take(GRID) {
@@ -279,18 +304,57 @@ impl Game {
         true
     }
 
-    // Checking if target position hits any house solid bounding box
-    pub fn hits_house(&self, target_pos: Vec3) -> bool {
+    pub fn buy_turret_upgrade(&mut self) -> bool {
+        if self.turrets_unlocked {
+            self.set_msg("Defensive Guard Turrets already installed!");
+            return false;
+        }
+        if self.potatoes < TURRET_UPGRADE_COST {
+            self.set_msg(&format!("Need 150 Potatoes to purchase Turrets! (Have {})", self.potatoes));
+            return false;
+        }
+
+        self.potatoes -= TURRET_UPGRADE_COST;
+        self.turrets_unlocked = true;
+        self.setup_turrets();
+        let m_pos = self.active_market_pos();
+        self.spawn_sparkles(m_pos + vec3(0.0, 1.5, 0.0));
+        self.set_msg("UNLOCKED! 4 Corner Automated Gun Turrets installed on Farm!");
+        true
+    }
+
+    // Checking if target position hits any house OR market solid bounding box
+    pub fn hits_solid_obstacle(&self, target_pos: Vec3) -> bool {
+        // 1. House Solid Bounds
         for h in &self.houses {
             if target_pos.x >= h.min_x && target_pos.x <= h.max_x &&
                target_pos.z >= h.min_z && target_pos.z <= h.max_z {
                 return true;
             }
         }
+
+        // 2. West & East Market Solid Bounds (3.8 x 3.8 box around market center)
+        let w_min_x = WEST_MARKET_POS.x - 2.0;
+        let w_max_x = WEST_MARKET_POS.x + 2.0;
+        let w_min_z = WEST_MARKET_POS.z - 2.0;
+        let w_max_z = WEST_MARKET_POS.z + 2.0;
+        if target_pos.x >= w_min_x && target_pos.x <= w_max_x &&
+           target_pos.z >= w_min_z && target_pos.z <= w_max_z {
+            return true;
+        }
+
+        let e_min_x = EAST_MARKET_POS.x - 2.0;
+        let e_max_x = EAST_MARKET_POS.x + 2.0;
+        let e_min_z = EAST_MARKET_POS.z - 2.0;
+        let e_max_z = EAST_MARKET_POS.z + 2.0;
+        if target_pos.x >= e_min_x && target_pos.x <= e_max_x &&
+           target_pos.z >= e_min_z && target_pos.z <= e_max_z {
+            return true;
+        }
+
         false
     }
 
-    // Grid step movement (Square-by-Square)
     pub fn try_step(&mut self, dx: i32, dz: i32) -> bool {
         let nx = self.farmer.grid_x + dx;
         let nz = self.farmer.grid_z + dz;
@@ -309,8 +373,8 @@ impl Game {
             return false;
         }
 
-        // 3. HOUSE SOLID BORDER COLLISION
-        if self.hits_house(target_pos) {
+        // 3. HOUSE & MARKET SOLID BORDER COLLISION
+        if self.hits_solid_obstacle(target_pos) {
             return false;
         }
 
@@ -323,7 +387,6 @@ impl Game {
     }
 
     pub fn handle_movement_input(&mut self) {
-        // Only allow key input when farmer reaches current square center (Square-by-Square!)
         let target = Self::grid_to_world(self.farmer.grid_x, self.farmer.grid_z);
         if self.farmer.position.distance(target) > 0.15 {
             return;
@@ -365,7 +428,7 @@ impl Game {
 
         self.handle_movement_input();
 
-        // Smoothly interpolate farmer towards current snapped grid target cell
+        // Interpolate farmer position
         let target = Self::grid_to_world(self.farmer.grid_x, self.farmer.grid_z);
         let to_target = target - self.farmer.position;
         let dist = to_target.length();
@@ -379,7 +442,7 @@ impl Game {
 
         self.farmer.plowing = is_key_down(KeyCode::Space);
 
-        // Farming actions on valid field grid coordinates (0..GRID)
+        // Farming actions
         let is_in_field = self.farmer.grid_x >= 0 && self.farmer.grid_x < GRID as i32 &&
                          self.farmer.grid_z >= 0 && self.farmer.grid_z < GRID as i32;
 
@@ -405,9 +468,13 @@ impl Game {
             }
         }
 
-        if is_key_pressed(KeyCode::E) && self.action_cooldown <= 0.0 {
-            if self.near_market() {
+        // Market Interaction Hotkeys: [E] Trade Potatoes -> Seeds, [T] Upgrade Turrets (150 Potatoes)
+        if self.near_market() && self.action_cooldown <= 0.0 {
+            if is_key_pressed(KeyCode::E) {
                 self.convert_potatoes();
+                self.action_cooldown = 0.4;
+            } else if is_key_pressed(KeyCode::T) {
+                self.buy_turret_upgrade();
                 self.action_cooldown = 0.4;
             }
         }
@@ -441,6 +508,145 @@ impl Game {
             sparkle.life -= dt;
         }
         self.sparkles.retain(|s| s.life > 0.0);
+
+        // --- NEW THIEF CHILDREN EVENT (Only applicable once player reaches 150 potatoes!) ---
+        if self.potatoes >= 150 || !self.children.is_empty() {
+            self.steal_timer += dt;
+
+            // Every 6 seconds, spawn a group of thief children to raid 5 potato fields
+            if self.steal_timer >= 6.0 {
+                self.steal_timer = 0.0;
+
+                // Find 5 random mature/planted potato fields to target
+                let mut target_cells = Vec::new();
+                for gx in 0..GRID {
+                    for gz in 0..GRID {
+                        if matches!(self.field[gx][gz], CellState::Planted { .. }) {
+                            target_cells.push((gx, gz));
+                        }
+                    }
+                }
+
+                // Spawn up to 5 thief children from perimeter village borders
+                let spawn_count = 5.min(target_cells.len());
+                for i in 0..spawn_count {
+                    let (gx, gz) = target_cells[i];
+                    let spawn_pos = vec3(
+                        if i % 2 == 0 { -24.0 } else { 24.0 },
+                        0.0,
+                        if i < 2 { -24.0 } else { 24.0 },
+                    );
+
+                    self.children.push(ThiefChild {
+                        position: spawn_pos,
+                        target_cell: Some((gx, gz)),
+                        speed: 7.5,
+                        fleeing: false,
+                        alive: true,
+                    });
+                }
+
+                if spawn_count > 0 && self.msg_timer <= 0.0 {
+                    self.set_msg("WARNING! Thief Children raiding your Potato Fields!");
+                }
+            }
+        }
+
+        // Update Thief Children AI
+        for child in self.children.iter_mut() {
+            if !child.alive {
+                continue;
+            }
+
+            if !child.fleeing {
+                if let Some((gx, gz)) = child.target_cell {
+                    let target_pos = Self::cell_center(gx, gz);
+                    let to_target = target_pos - child.position;
+                    let dist = to_target.length();
+
+                    if dist > 0.4 {
+                        child.position += to_target.normalize() * (child.speed * dt);
+                    } else {
+                        // Reached potato field - Steal crop!
+                        child.fleeing = true;
+                        child.target_cell = None;
+                    }
+                } else {
+                    child.fleeing = true;
+                }
+            } else {
+                // Flee back towards village border
+                let flee_dir = (child.position - Vec3::ZERO).normalize();
+                child.position += flee_dir * (child.speed * dt);
+            }
+        }
+
+        // Apply crop steals once children reach target or escape
+        for child in self.children.iter_mut() {
+            if child.fleeing && child.alive {
+                // Steal the target cell if not stolen yet
+                if let Some((gx, gz)) = child.target_cell.take() {
+                    self.field[gx][gz] = CellState::Grass;
+                }
+            }
+        }
+
+        // Remove escaped or dead children
+        self.children.retain(|c| c.alive && c.position.length() < 40.0);
+
+        // --- AUTOMATED DEFENSE TURRETS ENGINE ---
+        if self.turrets_unlocked {
+            for turret in self.turrets.iter_mut() {
+                turret.fire_cooldown = (turret.fire_cooldown - dt).max(0.0);
+
+                if turret.fire_cooldown <= 0.0 {
+                    // Find nearest active thief child within range (18 units)
+                    let t_pos = turret.position + vec3(0.0, 1.2, 0.0);
+                    let mut nearest_idx: Option<usize> = None;
+                    let mut min_dist = 18.0;
+
+                    for (idx, child) in self.children.iter().enumerate() {
+                        if child.alive {
+                            let d = t_pos.distance(child.position);
+                            if d < min_dist {
+                                min_dist = d;
+                                nearest_idx = Some(idx);
+                            }
+                        }
+                    }
+
+                    if let Some(idx) = nearest_idx {
+                        let target_child_pos = self.children[idx].position + vec3(0.0, 0.6, 0.0);
+                        let dir = (target_child_pos - t_pos).normalize();
+
+                        // Fire high-speed turret laser bullet
+                        self.turret_bullets.push(BulletParticle {
+                            position: t_pos,
+                            velocity: dir * 45.0,
+                            life: 0.5,
+                        });
+
+                        turret.fire_cooldown = 0.25; // Rapid fire
+                    }
+                }
+            }
+
+            // Update Turret Bullets & Collision with Thief Children
+            for bullet in self.turret_bullets.iter_mut() {
+                bullet.position += bullet.velocity * dt;
+                bullet.life -= dt;
+
+                // Check bullet collision with thief children
+                for child in self.children.iter_mut() {
+                    if child.alive && bullet.position.distance(child.position + vec3(0.0, 0.6, 0.0)) < 0.8 {
+                        child.alive = false;
+                        bullet.life = 0.0;
+                        break;
+                    }
+                }
+            }
+            self.turret_bullets.retain(|b| b.life > 0.0);
+        }
 
         // Air Event (B-2 Stealth Bomber Shootout every 60s)
         self.air_event.timer += dt;

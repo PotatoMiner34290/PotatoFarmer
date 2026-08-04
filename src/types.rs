@@ -17,7 +17,6 @@ pub const CAM_OFFSET: Vec3 = vec3(24.0, 30.0, 24.0);
 pub const STEP_REPEAT: f32 = 0.12;
 
 // Map Boundaries (Invisible Wall Limit for Grid coordinates)
-// Grid x ranges from -15 to 25, z ranges from -12 to 12
 pub const MAP_LIMIT_X_MIN: f32 = -52.0;
 pub const MAP_LIMIT_X_MAX: f32 = 52.0;
 pub const MAP_LIMIT_Z_MIN: f32 = -34.0;
@@ -36,6 +35,7 @@ pub const WEST_MARKET_POS: Vec3 = vec3(-FIELD_HALF - 1.2, 0.0, 0.0);
 pub const EAST_MARKET_POS: Vec3 = vec3(FIELD_HALF + 1.2, 0.0, 0.0);
 
 pub const POTATO_TO_SEED: u32 = 4;
+pub const TURRET_UPGRADE_COST: u32 = 150;
 pub const SAVE_FILE: &str = "savegame.json";
 
 #[derive(Clone, Copy, PartialEq)]
@@ -79,6 +79,7 @@ pub struct SaveData {
     pub farmer_grid_x: i32,
     pub farmer_grid_z: i32,
     pub field: Vec<Vec<CellStateSave>>,
+    pub turrets_unlocked: bool,
 }
 
 pub struct DirtParticle {
@@ -112,6 +113,19 @@ pub struct AirEvent {
     pub bullets: Vec<BulletParticle>,
 }
 
+pub struct ThiefChild {
+    pub position: Vec3,
+    pub target_cell: Option<(usize, usize)>,
+    pub speed: f32,
+    pub fleeing: bool,
+    pub alive: bool,
+}
+
+pub struct Turret {
+    pub position: Vec3,
+    pub fire_cooldown: f32,
+}
+
 pub struct Farmer {
     pub grid_x: i32,
     pub grid_z: i32,
@@ -126,7 +140,6 @@ pub struct CameraState {
     pub target: Vec3,
 }
 
-// Pre-calculated static house list with bounding boxes for ultra-fast O(1) collision checking
 #[derive(Clone, Copy)]
 pub struct HouseBounds {
     pub center: Vec3,
