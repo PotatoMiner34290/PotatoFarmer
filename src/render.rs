@@ -2,6 +2,163 @@ use macroquad::prelude::*;
 use crate::types::*;
 use crate::game::Game;
 
+pub fn draw_environment() {
+    // 1. DYNAMIC SUN IN THE SKY
+    let sun_pos = vec3(-30.0, 38.0, -45.0);
+    draw_sphere(sun_pos, 4.5, None, Color::from_rgba(255, 235, 120, 255));
+    draw_sphere(sun_pos, 6.0, None, Color::from_rgba(255, 200, 50, 80)); // Sun Glow
+
+    // 2. EXPANDED GROUND TERRAIN (2 sides of the map)
+    let ground_y = -0.15;
+    let ground_color = Color::from_rgba(65, 120, 55, 255); // Rich green grass ground
+
+    // East Side Ground (where main crop field and village lie: x from -27 to +55)
+    draw_cube(
+        vec3(14.0, ground_y, 0.0),
+        vec3(82.0, 0.2, 72.0),
+        None,
+        ground_color,
+    );
+
+    // West Side Ground (across the river: x from -55 to -35)
+    draw_cube(
+        vec3(-45.0, ground_y, 0.0),
+        vec3(20.0, 0.2, 72.0),
+        None,
+        Color::from_rgba(55, 110, 48, 255),
+    );
+
+    // 3. RIVER WATER (Running North-South along x = -31.0)
+    let water_color = Color::from_rgba(40, 140, 210, 210);
+    let wave_pulse = (get_time() * 2.0).sin() as f32 * 0.05;
+    draw_cube(
+        vec3(-31.0, -0.25 + wave_pulse, 0.0),
+        vec3(8.0, 0.3, 74.0),
+        None,
+        water_color,
+    );
+
+    // River bed mud banks
+    draw_cube(
+        vec3(-35.0, -0.1, 0.0),
+        vec3(1.5, 0.3, 72.0),
+        None,
+        Color::from_rgba(90, 65, 40, 255),
+    );
+    draw_cube(
+        vec3(-27.0, -0.1, 0.0),
+        vec3(1.5, 0.3, 72.0),
+        None,
+        Color::from_rgba(90, 65, 40, 255),
+    );
+
+    // 4. BOATS DOCKED IN THE RIVER WATER
+    let wood_boat = Color::from_rgba(110, 70, 40, 255);
+    let wood_dark = Color::from_rgba(70, 45, 25, 255);
+
+    // Boat 1 (North Dock)
+    let b1 = vec3(-30.5, -0.05, -14.0);
+    draw_cube(b1, vec3(1.8, 0.5, 4.2), None, wood_boat);
+    draw_cube(b1 + vec3(0.0, 0.1, 0.0), vec3(1.4, 0.5, 3.8), None, wood_dark); // Interior hollow
+    draw_cylinder(b1 + vec3(0.0, 0.4, 0.5), 0.04, 0.04, 2.5, None, DARKGRAY); // Oar / Fishing rod
+
+    // Boat 2 (South Dock)
+    let b2 = vec3(-31.8, -0.05, 16.0);
+    draw_cube(b2, vec3(2.0, 0.55, 4.6), None, Color::from_rgba(130, 85, 45, 255));
+    draw_cube(b2 + vec3(0.0, 0.12, 0.0), vec3(1.6, 0.55, 4.2), None, wood_dark);
+    draw_cube(b2 + vec3(0.0, 0.6, 0.0), vec3(2.2, 0.08, 2.0), None, Color::from_rgba(180, 50, 40, 255)); // Red tarp cover
+
+    // 5. URBAN AFRICAN SHACK WOODEN PLANK BRIDGE (Connecting both sides of map)
+    let plank_color = Color::from_rgba(140, 95, 55, 255);
+    let rope_color = Color::from_rgba(180, 150, 90, 255);
+
+    // Main bridge deck (planks)
+    for p in 0..16 {
+        let px = -35.0 + p as f32 * 0.52;
+        let p_tilt = (p as f32 * 0.8).sin() * 0.03;
+        draw_cube(
+            vec3(px, 0.12 + p_tilt, 0.0),
+            vec3(0.46, 0.12, 4.2),
+            None,
+            if p % 2 == 0 { plank_color } else { Color::from_rgba(115, 75, 40, 255) },
+        );
+    }
+
+    // Wooden Stilt Supports underwater
+    for &sx in &[-34.0, -31.0, -28.0] {
+        draw_cylinder(vec3(sx, -0.4, -1.9), 0.12, 0.12, 1.2, None, wood_dark);
+        draw_cylinder(vec3(sx, -0.4, 1.9), 0.12, 0.12, 1.2, None, wood_dark);
+    }
+
+    // Handrail Posts & Rope Railing (Shack plank style)
+    for &rx in &[-34.5, -31.0, -27.5] {
+        draw_cube(vec3(rx, 0.65, -2.0), vec3(0.12, 1.0, 0.12), None, wood_dark);
+        draw_cube(vec3(rx, 0.65, 2.0), vec3(0.12, 1.0, 0.12), None, wood_dark);
+    }
+    draw_line_3d(vec3(-35.0, 1.1, -2.0), vec3(-27.0, 1.1, -2.0), rope_color);
+    draw_line_3d(vec3(-35.0, 1.1, 2.0), vec3(-27.0, 1.1, 2.0), rope_color);
+}
+
+pub fn draw_air_event_3d(game: &Game) {
+    let event = &game.air_event;
+    if !event.active && event.bullets.is_empty() {
+        return;
+    }
+
+    // 1. B-2 STEALTH BOMBER (Iconic Flying Wing Silhouette)
+    if event.active {
+        let bpos = event.bomber_pos;
+        let bomber_dark = Color::from_rgba(35, 38, 42, 255);
+        let cockpit_tint = Color::from_rgba(20, 20, 25, 255);
+
+        // Center fuselage / nose tip
+        draw_cube(bpos, vec3(3.2, 0.6, 2.2), None, bomber_dark);
+        draw_cube(bpos + vec3(1.8, -0.05, 0.0), vec3(1.4, 0.4, 1.0), None, bomber_dark);
+
+        // Swept-back Flying Wings
+        draw_cube(bpos + vec3(-0.5, 0.0, 4.5), vec3(3.5, 0.35, 7.5), None, bomber_dark);
+        draw_cube(bpos + vec3(-0.5, 0.0, -4.5), vec3(3.5, 0.35, 7.5), None, bomber_dark);
+        draw_cube(bpos + vec3(-2.2, 0.0, 8.5), vec3(2.5, 0.25, 3.5), None, bomber_dark);
+        draw_cube(bpos + vec3(-2.2, 0.0, -8.5), vec3(2.5, 0.25, 3.5), None, bomber_dark);
+
+        // Stealth Cockpit Windshield
+        draw_cube(bpos + vec3(1.2, 0.35, 0.0), vec3(1.0, 0.25, 1.2), None, cockpit_tint);
+
+        // Jet Exhaust Ports
+        draw_cube(bpos + vec3(-2.0, 0.1, 1.5), vec3(0.6, 0.3, 1.2), None, RED);
+        draw_cube(bpos + vec3(-2.0, 0.1, -1.5), vec3(0.6, 0.3, 1.2), None, RED);
+
+        // 2. FIGHTER JETS (F-22 Raptor Pursuit Jet Silhouettes)
+        let jet_color = Color::from_rgba(110, 118, 128, 255);
+        let jet_canopy = Color::from_rgba(230, 200, 100, 200);
+
+        let render_jet = |jpos: Vec3| {
+            // Fuselage
+            draw_cube(jpos, vec3(3.6, 0.55, 0.9), None, jet_color);
+            // Nose cone
+            draw_cube(jpos + vec3(2.0, 0.0, 0.0), vec3(1.2, 0.35, 0.4), None, DARKGRAY);
+            // Delta Wings
+            draw_cube(jpos + vec3(-0.2, 0.0, 0.0), vec3(2.2, 0.15, 3.8), None, jet_color);
+            // Twin Tail Fins
+            draw_cube(jpos + vec3(-1.4, 0.7, 0.8), vec3(0.8, 0.9, 0.12), None, jet_color);
+            draw_cube(jpos + vec3(-1.4, 0.7, -0.8), vec3(0.8, 0.9, 0.12), None, jet_color);
+            // Golden Tinted Canopy
+            draw_sphere(jpos + vec3(0.8, 0.35, 0.0), 0.35, None, jet_canopy);
+            // Afterburner Glow
+            draw_sphere(jpos + vec3(-1.9, 0.0, 0.0), 0.3, None, ORANGE);
+        };
+
+        render_jet(event.jet1_pos);
+        render_jet(event.jet2_pos);
+    }
+
+    // 3. AIR COMBAT TRACER BULLETS
+    for bullet in &event.bullets {
+        draw_sphere(bullet.position, 0.15, None, YELLOW);
+        draw_line_3d(bullet.position, bullet.position - bullet.velocity * 0.05, ORANGE);
+    }
+}
+
 pub fn draw_field(game: &Game) {
     for gx in 0..GRID {
         for gz in 0..GRID {
@@ -240,7 +397,6 @@ pub fn draw_market(pos: Vec3, _name: &str, is_near: bool) {
     let sandbag_color = Color::from_rgba(185, 165, 120, 255);
     let ammo_green = Color::from_rgba(65, 85, 50, 255);
 
-    // 1. MAIN MARKET STRUCTURE
     draw_cube(
         pos + vec3(0.0, 1.3, 0.0),
         vec3(3.4, 2.6, 3.4),
@@ -248,7 +404,6 @@ pub fn draw_market(pos: Vec3, _name: &str, is_near: bool) {
         wood_dark,
     );
 
-    // Cladding
     for i in 0..5 {
         let y_offset = 0.3 + i as f32 * 0.5;
         draw_cube(
@@ -265,7 +420,6 @@ pub fn draw_market(pos: Vec3, _name: &str, is_near: bool) {
         );
     }
 
-    // Corrugated Roof
     let roof_center = pos + vec3(0.0, 2.85, 0.0);
     draw_cube(roof_center, vec3(4.0, 0.18, 4.0), None, metal_roof);
     for r in 0..4 {
@@ -278,7 +432,6 @@ pub fn draw_market(pos: Vec3, _name: &str, is_near: bool) {
         );
     }
 
-    // Porch & Canopy
     let porch_z = 2.4;
     draw_cylinder(
         pos + vec3(-1.5, 1.1, porch_z),
@@ -297,7 +450,6 @@ pub fn draw_market(pos: Vec3, _name: &str, is_near: bool) {
         wood_dark,
     );
 
-    // Colorful Canopy Awning (Market stripes: Red & Yellow)
     draw_cube(
         pos + vec3(0.0, 2.3, 2.0),
         vec3(3.8, 0.1, 1.6),
@@ -314,7 +466,6 @@ pub fn draw_market(pos: Vec3, _name: &str, is_near: bool) {
         );
     }
 
-    // Doorway cutout
     draw_cube(
         pos + vec3(0.0, 0.9, 1.71),
         vec3(1.2, 1.8, 0.06),
@@ -322,7 +473,6 @@ pub fn draw_market(pos: Vec3, _name: &str, is_near: bool) {
         Color::from_rgba(20, 15, 10, 255),
     );
 
-    // Sandbags & Crates
     let sb_h = 0.22;
     let sb_w = 0.45;
     let sb_l = 0.9;
@@ -337,7 +487,6 @@ pub fn draw_market(pos: Vec3, _name: &str, is_near: bool) {
         );
     }
 
-    // Green ammo crates & produce boxes on display
     draw_cube(
         pos + vec3(1.2, 0.25, 1.9),
         vec3(0.7, 0.5, 0.5),
@@ -351,17 +500,14 @@ pub fn draw_market(pos: Vec3, _name: &str, is_near: bool) {
         Color::from_rgba(160, 110, 55, 255),
     );
 
-    // AK-47 Rifle Leaning against crates
     let rifle_pos = pos + vec3(-0.7, 0.5, 2.2);
     draw_cube(rifle_pos, vec3(0.1, 0.35, 0.08), None, Color::from_rgba(90, 50, 25, 255));
     draw_cube(rifle_pos + vec3(0.0, 0.35, 0.0), vec3(0.06, 0.5, 0.06), None, BLACK);
 
-    // Radio antenna mast
     let antenna_pos = pos + vec3(-1.6, 3.0, -1.6);
     draw_cylinder(antenna_pos, 0.04, 0.06, 3.5, None, DARKGRAY);
     draw_sphere(antenna_pos + vec3(0.0, 1.8, 0.0), 0.12, None, RED);
 
-    // Signboard ("MARKET")
     draw_cube(
         pos + vec3(0.0, 2.35, 2.55),
         vec3(2.4, 0.5, 0.08),
@@ -374,7 +520,6 @@ pub fn draw_market(pos: Vec3, _name: &str, is_near: bool) {
         GOLD,
     );
 
-    // Interaction Ring when player is near this market
     if is_near {
         let pulse = (get_time() * 5.0).sin() as f32 * 0.1;
         draw_cylinder(
@@ -400,7 +545,6 @@ pub fn draw_surrounding_houses() {
         let house_type = idx % 4;
 
         match house_type {
-            // Style 0: Traditional Mud-Brick African Round Hut
             0 => {
                 let mud_color = Color::from_rgba(150, 100, 60, 255);
                 let thatch_color = Color::from_rgba(215, 170, 80, 255);
@@ -410,7 +554,6 @@ pub fn draw_surrounding_houses() {
                 draw_cube(pos + vec3(0.0, 0.7, 1.42), vec3(0.7, 1.4, 0.1), None, Color::from_rgba(30, 20, 10, 255));
             }
 
-            // Style 1: Corrugated Tin Township Shack
             1 => {
                 let tin_color = Color::from_rgba(135, 140, 145, 255);
                 let rust_color = Color::from_rgba(175, 80, 45, 255);
@@ -422,7 +565,6 @@ pub fn draw_surrounding_houses() {
                 draw_cylinder(pos + vec3(1.1, 0.9, 2.1), 0.06, 0.06, 1.8, None, DARKGRAY);
             }
 
-            // Style 2: White Plaster & Terracotta Tile Villa
             2 => {
                 let plaster_color = Color::from_rgba(230, 220, 190, 255);
                 let tile_color = Color::from_rgba(185, 75, 50, 255);
@@ -433,7 +575,6 @@ pub fn draw_surrounding_houses() {
                 draw_cube(pos + vec3(0.9, 1.5, 1.42), vec3(0.5, 0.6, 0.05), None, Color::from_rgba(90, 55, 30, 255));
             }
 
-            // Style 3: UNIQUE 4TH HOUSE - 2-STORY FORTIFIED WARLORD COMPOUND VILLA!
             3 => {
                 let concrete_color = Color::from_rgba(145, 150, 155, 255);
                 let sandbag_color = Color::from_rgba(185, 165, 120, 255);
@@ -505,6 +646,9 @@ pub fn draw_scene(game: &Game) {
         ..Default::default()
     });
 
+    // 1. Draw Sun, River, Boats, Shack Plank Bridge, Ground Terrain across 2 sides
+    draw_environment();
+
     draw_grid(
         GRID as u32,
         CELL,
@@ -556,15 +700,18 @@ pub fn draw_scene(game: &Game) {
     draw_current_tile_marker(game);
     draw_farmer_3d(&game.farmer);
 
+    // 2. Draw 3D B2 Bomber, Fighter Jets, and Tracer Bullets Overhead
+    draw_air_event_3d(game);
+
     set_default_camera();
 }
 
 pub fn draw_hud(game: &Game) {
-    draw_rectangle(10.0, 10.0, 450.0, 215.0, Color::from_rgba(20, 25, 30, 200));
-    draw_rectangle_lines(10.0, 10.0, 450.0, 215.0, 2.0, GOLD);
+    draw_rectangle(10.0, 10.0, 480.0, 215.0, Color::from_rgba(20, 25, 30, 200));
+    draw_rectangle_lines(10.0, 10.0, 480.0, 215.0, 2.0, GOLD);
 
     draw_text("AFRICAN GUN RUNNER POTATO FARM", 20.0, 34.0, 20.0, GOLD);
-    draw_text("WASD / Arrows - Move Farmer", 20.0, 60.0, 18.0, WHITE);
+    draw_text("WASD / Arrows - Move Farmer across Map & Bridge", 20.0, 60.0, 18.0, WHITE);
     draw_text(
         "SPACE - Plow Soil (Hold to till rows)",
         20.0,
@@ -612,10 +759,10 @@ pub fn draw_hud(game: &Game) {
     }
 
     if game.msg_timer > 0.0 {
-        let msg_x = screen_width() / 2.0 - 250.0;
+        let msg_x = screen_width() / 2.0 - 260.0;
         let msg_y = 30.0;
-        draw_rectangle(msg_x, msg_y, 500.0, 40.0, Color::from_rgba(30, 60, 90, 230));
-        draw_rectangle_lines(msg_x, msg_y, 500.0, 40.0, 2.0, GOLD);
+        draw_rectangle(msg_x, msg_y, 520.0, 40.0, Color::from_rgba(30, 60, 90, 230));
+        draw_rectangle_lines(msg_x, msg_y, 520.0, 40.0, 2.0, GOLD);
         draw_text(&game.status_msg, msg_x + 15.0, msg_y + 26.0, 18.0, WHITE);
     }
 }

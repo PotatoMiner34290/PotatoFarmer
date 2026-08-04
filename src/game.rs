@@ -15,6 +15,7 @@ pub struct Game {
     pub action_cooldown: f32,
     pub msg_timer: f32,
     pub status_msg: String,
+    pub air_event: AirEvent,
 }
 
 impl Game {
@@ -45,9 +46,17 @@ impl Game {
             action_cooldown: 0.0,
             msg_timer: 0.0,
             status_msg: String::new(),
+            air_event: AirEvent {
+                active: false,
+                timer: 50.0, // Trigger first flyby shortly after starting (10s in)
+                fly_time: 0.0,
+                bomber_pos: Vec3::ZERO,
+                jet1_pos: Vec3::ZERO,
+                jet2_pos: Vec3::ZERO,
+                bullets: Vec::new(),
+            },
         };
 
-        // Auto-load saved game if it exists
         if std::path::Path::new(SAVE_FILE).exists() {
             game.load_game();
             game.set_msg("Welcome back! Auto-loaded saved game.");
@@ -155,10 +164,10 @@ impl Game {
         for _ in 0..25 {
             let life = rand::gen_range(0.8, 1.6);
             let colors = [
-                Color::from_rgba(255, 215, 0, 255),   // Gold
-                Color::from_rgba(255, 165, 0, 255),   // Orange
-                Color::from_rgba(100, 220, 100, 255), // Green
-                Color::from_rgba(255, 255, 180, 255), // Bright yellow
+                Color::from_rgba(255, 215, 0, 255),
+                Color::from_rgba(255, 165, 0, 255),
+                Color::from_rgba(100, 220, 100, 255),
+                Color::from_rgba(255, 255, 180, 255),
             ];
             self.sparkles.push(SparkleParticle {
                 position: pos
@@ -234,49 +243,61 @@ impl Game {
         self.farmer.position.distance(target)
     }
 
-    pub fn try_step(&mut self, dx: i32, dz: i32) -> bool {
-        let nx = self.farmer.grid_x as i32 + dx;
-        let nz = self.farmer.grid_z as i32 + dz;
-
-        if nx < 0 || nz < 0 || nx >= GRID as i32 || nz >= GRID as i32 {
-            return false;
-        }
-
-        self.farmer.grid_x = nx as usize;
-        self.farmer.grid_z = nz as usize;
-        self.farmer.facing = (dx as f32).atan2(dz as f32);
-        self.farmer.step_cooldown = STEP_REPEAT;
-
-        true
-    }
-
-    pub fn handle_movement_input(&mut self) {
-        if self.distance_to_cell_center() > 0.25 {
-            return;
-        }
-
-        let mut dx = 0;
-        let mut dz = 0;
+    pub fn handle_movement_input(&mut self, dt: f32) {
+        let mut move_dir = Vec3::ZERO;
 
         if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) {
-            dz -= 1;
+            move_dir.z -= 1.0;
         }
         if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) {
-            dz += 1;
+            move_dir.z += 1.0;
         }
         if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) {
-            dx -= 1;
+            move_dir.x -= 1.0;
         }
         if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) {
-            dx += 1;
+            move_dir.x += 1.0;
         }
 
-        if dx != 0 && dz != 0 {
-            dx = 0;
-        }
+        if move_dir.length_squared() > 0.0 {
+            move_dir = move_dir.normalize();
+            self.farmer.facing = move_dir.x.atan2(move_dir.z);
 
-        if dx != 0 || dz != 0 {
-            self.try_step(dx, dz);
+            let new_pos = self.farmer.position + move_dir * (MOVE_SPEED * dt);
+
+            // 1. INVISIBLE MAP WALL BOUNDARY COLLISION
+            let clamped_x = new_pos.x.clamp(MAP_LIMIT_X_MIN, MAP_LIMIT_X_MAX);
+            let clamped_z = new_pos.z.clamp(MAP_LIMIT_Z_MIN, MAP_LIMIT_Z_MAX);
+            let mut final_pos = vec3(clamped_x, 0.0, clamped_z);
+
+            // 2. WATER RIVER & SHACK BRIDGE COLLISION
+            // If trying to walk into the river section (x between RIVER_X_MIN and RIVER_X_MAX)
+            let inside_river_x = final_pos.x > RIVER_X_MIN && final_pos.x < RIVER_X_MAX;
+            let on_bridge = (final_pos.z - BRIDGE_Z_CENTER).abs() < BRIDGE_Z_HALF_WIDTH;
+
+            if inside_river_x && !on_bridge {
+                // Block player from stepping into water without using the bridge!
+                if self.farmer.position.x <= RIVER_X_MIN {
+                    final_pos.x = RIVER_X_MIN;
+                } else if self.farmer.position.x >= RIVER_X_MAX {
+                    final_pos.x = RIVER_X_MAX;
+                } else if self.farmer.position.z < BRIDGE_Z_CENTER - BRIDGE_Z_HALF_WIDTH {
+                    final_pos.z = BRIDGE_Z_CENTER - BRIDGE_Z_HALF_WIDTH;
+                } else if self.farmer.position.z > BRIDGE_Z_CENTER + BRIDGE_Z_HALF_WIDTH {
+                    final_pos.z = BRIDGE_Z_CENTER + BRIDGE_Z_HALF_WIDTH;
+                }
+            }
+
+            self.farmer.position = final_pos;
+
+            // Sync grid tile indices if inside crop field
+            let field_rel_x = self.farmer.position.x + FIELD_HALF;
+            let field_rel_z = self.farmer.position.z + FIELD_HALF;
+            if field_rel_x >= 0.0 && field_rel_x < GRID as f32 * CELL &&
+               field_rel_z >= 0.0 && field_rel_z < GRID as f32 * CELL {
+                self.farmer.grid_x = (field_rel_x / CELL).floor() as usize;
+                self.farmer.grid_z = (field_rel_z / CELL).floor() as usize;
+            }
         }
     }
 
@@ -285,7 +306,6 @@ impl Game {
         self.farmer.step_cooldown = (self.farmer.step_cooldown - dt).max(0.0);
         self.msg_timer = (self.msg_timer - dt).max(0.0);
 
-        // Save & Load Hotkeys
         if is_key_pressed(KeyCode::F5) || is_key_pressed(KeyCode::K) {
             self.save_game();
         }
@@ -293,23 +313,11 @@ impl Game {
             self.load_game();
         }
 
-        self.handle_movement_input();
-
-        // Constant velocity movement towards target cell
-        let target = Self::cell_center(self.farmer.grid_x, self.farmer.grid_z);
-        let to_target = target - self.farmer.position;
-        let dist = to_target.length();
-        if dist > 0.001 {
-            let step = (MOVE_SPEED * dt).min(dist);
-            self.farmer.position += to_target.normalize() * step;
-        } else {
-            self.farmer.position = target;
-        }
-        self.farmer.position.y = 0.0;
+        self.handle_movement_input(dt);
 
         self.farmer.plowing = is_key_down(KeyCode::Space);
 
-        if self.farmer.plowing && self.distance_to_cell_center() < 0.3 {
+        if self.farmer.plowing && self.distance_to_cell_center() < 0.5 {
             self.plow_cell(self.farmer.grid_x, self.farmer.grid_z);
         }
 
@@ -334,13 +342,13 @@ impl Game {
             }
         }
 
-        // Camera
+        // Smooth Camera Follow
         let desired_target = self.farmer.position + vec3(0.0, 0.8, 0.0);
         let t = 1.0 - (-CAM_SMOOTH * dt).exp();
         self.camera.target = self.camera.target.lerp(desired_target, t);
         self.camera.position = self.camera.target + CAM_OFFSET;
 
-        // Grow crops
+        // Crop Growth
         for row in self.field.iter_mut() {
             for cell in row.iter_mut() {
                 if let CellState::Planted { growth } = cell {
@@ -349,7 +357,7 @@ impl Game {
             }
         }
 
-        // Dirt physics
+        // Particle Physics
         for particle in self.dirt.iter_mut() {
             particle.velocity.y -= 12.0 * dt;
             particle.position += particle.velocity * dt;
@@ -357,12 +365,69 @@ impl Game {
         }
         self.dirt.retain(|p| p.life > 0.0 && p.position.y > -0.5);
 
-        // Sparkle physics
         for sparkle in self.sparkles.iter_mut() {
             sparkle.velocity.y -= 2.0 * dt;
             sparkle.position += sparkle.velocity * dt;
             sparkle.life -= dt;
         }
         self.sparkles.retain(|s| s.life > 0.0);
+
+        // 3. B2 BOMBER & FIGHTER JET AIR COMBAT EVENT (Every 60 Seconds)
+        self.air_event.timer += dt;
+        if self.air_event.timer >= 60.0 {
+            self.air_event.timer = 0.0;
+            self.air_event.active = true;
+            self.air_event.fly_time = 0.0;
+            self.set_msg("AIR RAID INCOMING! B-2 Stealth Bomber & Fighter Jets Overhead!");
+        }
+
+        if self.air_event.active {
+            self.air_event.fly_time += dt * 0.08; // ~12.5s flyby across sky
+
+            let progress = self.air_event.fly_time;
+            let start_x = -120.0;
+            let end_x = 120.0;
+
+            let cur_x = start_x + (end_x - start_x) * progress;
+            let sky_y = 22.0;
+
+            // B2 Bomber position
+            self.air_event.bomber_pos = vec3(cur_x, sky_y, -10.0);
+
+            // Fighter Jets pursuing B2 Bomber from behind
+            self.air_event.jet1_pos = vec3(cur_x - 18.0, sky_y + 2.5, -4.0);
+            self.air_event.jet2_pos = vec3(cur_x - 24.0, sky_y - 2.0, -16.0);
+
+            // Fighter Jets fire tracer bullets towards the B2 Bomber!
+            if rand::gen_range(0.0, 1.0) < 0.4 {
+                let muzzle1 = self.air_event.jet1_pos + vec3(3.0, 0.0, 0.0);
+                let dir1 = (self.air_event.bomber_pos - muzzle1).normalize();
+                self.air_event.bullets.push(BulletParticle {
+                    position: muzzle1,
+                    velocity: dir1 * 60.0,
+                    life: 0.8,
+                });
+            }
+            if rand::gen_range(0.0, 1.0) < 0.4 {
+                let muzzle2 = self.air_event.jet2_pos + vec3(3.0, 0.0, 0.0);
+                let dir2 = (self.air_event.bomber_pos - muzzle2).normalize();
+                self.air_event.bullets.push(BulletParticle {
+                    position: muzzle2,
+                    velocity: dir2 * 60.0,
+                    life: 0.8,
+                });
+            }
+
+            if progress >= 1.0 {
+                self.air_event.active = false;
+            }
+        }
+
+        // Bullet physics & retention
+        for bullet in self.air_event.bullets.iter_mut() {
+            bullet.position += bullet.velocity * dt;
+            bullet.life -= dt;
+        }
+        self.air_event.bullets.retain(|b| b.life > 0.0);
     }
 }

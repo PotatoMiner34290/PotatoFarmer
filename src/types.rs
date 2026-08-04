@@ -7,14 +7,28 @@ pub const FIELD_HALF: f32 = GRID as f32 * CELL / 2.0; // 20.0
 
 pub const GROW_TIME: f32 = 18.0;
 
-// Movement speed in units per second (constant, non-janky speed)
+// Movement speed in units per second
 pub const MOVE_SPEED: f32 = 10.0;
 pub const CAM_SMOOTH: f32 = 8.0;
 
-// Wider camera to view the full field, village, and markets
+// Wider camera to view the full field, village, river, and markets
 pub const CAM_OFFSET: Vec3 = vec3(24.0, 30.0, 24.0);
 
 pub const STEP_REPEAT: f32 = 0.12;
+
+// Map Boundaries (Invisible Wall Limit)
+pub const MAP_LIMIT_X_MIN: f32 = -52.0;
+pub const MAP_LIMIT_X_MAX: f32 = 52.0;
+pub const MAP_LIMIT_Z_MIN: f32 = -34.0;
+pub const MAP_LIMIT_Z_MAX: f32 = 34.0;
+
+// River boundaries (River runs North-South at x around -28.0 to -34.0)
+pub const RIVER_X_MIN: f32 = -35.0;
+pub const RIVER_X_MAX: f32 = -27.0;
+
+// Wooden Shack Bridge bounds across river
+pub const BRIDGE_Z_CENTER: f32 = 0.0;
+pub const BRIDGE_Z_HALF_WIDTH: f32 = 2.2;
 
 // Opposite Market locations on West and East sides of the field
 pub const WEST_MARKET_POS: Vec3 = vec3(-FIELD_HALF - 1.2, 0.0, 0.0);
@@ -79,6 +93,22 @@ pub struct SparkleParticle {
     pub life: f32,
     pub max_life: f32,
     pub color: Color,
+}
+
+pub struct BulletParticle {
+    pub position: Vec3,
+    pub velocity: Vec3,
+    pub life: f32,
+}
+
+pub struct AirEvent {
+    pub active: bool,
+    pub timer: f32,       // Counts up to 60.0s cycle
+    pub fly_time: f32,    // Progress of flyby (0.0 to 1.0)
+    pub bomber_pos: Vec3,
+    pub jet1_pos: Vec3,
+    pub jet2_pos: Vec3,
+    pub bullets: Vec<BulletParticle>,
 }
 
 pub struct Farmer {
