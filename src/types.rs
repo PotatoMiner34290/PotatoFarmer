@@ -7,22 +7,23 @@ pub const FIELD_HALF: f32 = GRID as f32 * CELL / 2.0; // 20.0
 
 pub const GROW_TIME: f32 = 18.0;
 
-// Movement speed in units per second
-pub const MOVE_SPEED: f32 = 10.0;
-pub const CAM_SMOOTH: f32 = 8.0;
+// Movement speed in units per second (grid step transition speed)
+pub const MOVE_SPEED: f32 = 12.0;
+pub const CAM_SMOOTH: f32 = 10.0;
 
-// Wider camera to view the full field, village, river, and markets
+// Camera offset
 pub const CAM_OFFSET: Vec3 = vec3(24.0, 30.0, 24.0);
 
 pub const STEP_REPEAT: f32 = 0.12;
 
-// Map Boundaries (Invisible Wall Limit)
+// Map Boundaries (Invisible Wall Limit for Grid coordinates)
+// Grid x ranges from -15 to 25, z ranges from -12 to 12
 pub const MAP_LIMIT_X_MIN: f32 = -52.0;
 pub const MAP_LIMIT_X_MAX: f32 = 52.0;
 pub const MAP_LIMIT_Z_MIN: f32 = -34.0;
 pub const MAP_LIMIT_Z_MAX: f32 = 34.0;
 
-// River boundaries (River runs North-South at x around -28.0 to -34.0)
+// River boundaries (River runs North-South at x around -35.0 to -27.0)
 pub const RIVER_X_MIN: f32 = -35.0;
 pub const RIVER_X_MAX: f32 = -27.0;
 
@@ -75,8 +76,8 @@ impl From<CellStateSave> for CellState {
 pub struct SaveData {
     pub seeds: u32,
     pub potatoes: u32,
-    pub farmer_grid_x: usize,
-    pub farmer_grid_z: usize,
+    pub farmer_grid_x: i32,
+    pub farmer_grid_z: i32,
     pub field: Vec<Vec<CellStateSave>>,
 }
 
@@ -103,8 +104,8 @@ pub struct BulletParticle {
 
 pub struct AirEvent {
     pub active: bool,
-    pub timer: f32,       // Counts up to 60.0s cycle
-    pub fly_time: f32,    // Progress of flyby (0.0 to 1.0)
+    pub timer: f32,
+    pub fly_time: f32,
     pub bomber_pos: Vec3,
     pub jet1_pos: Vec3,
     pub jet2_pos: Vec3,
@@ -112,8 +113,8 @@ pub struct AirEvent {
 }
 
 pub struct Farmer {
-    pub grid_x: usize,
-    pub grid_z: usize,
+    pub grid_x: i32,
+    pub grid_z: i32,
     pub position: Vec3,
     pub facing: f32,
     pub plowing: bool,
@@ -123,6 +124,17 @@ pub struct Farmer {
 pub struct CameraState {
     pub position: Vec3,
     pub target: Vec3,
+}
+
+// Pre-calculated static house list with bounding boxes for ultra-fast O(1) collision checking
+#[derive(Clone, Copy)]
+pub struct HouseBounds {
+    pub center: Vec3,
+    pub min_x: f32,
+    pub max_x: f32,
+    pub min_z: f32,
+    pub max_z: f32,
+    pub style: usize,
 }
 
 // Deterministic pseudo-random float [0..1] based on grid coordinates and seed index
