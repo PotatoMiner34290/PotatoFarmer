@@ -1,4 +1,7 @@
 use macroquad::prelude::*;
+use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::io::{Read, Write};
 
 const GRID: usize = 20;
 const CELL: f32 = 2.0;
@@ -20,12 +23,49 @@ const SEED_STATION_POS: Vec3 = vec3(-FIELD_HALF - 1.2, 0.0, 0.0);
 const WATCHTOWER_POS: Vec3 = vec3(FIELD_HALF + 2.5, 0.0, -FIELD_HALF - 2.0);
 
 const POTATO_TO_SEED: u32 = 4;
+const SAVE_FILE: &str = "savegame.json";
 
 #[derive(Clone, Copy, PartialEq)]
 enum CellState {
     Grass,
     Plowed,
     Planted { growth: f32 },
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
+enum CellStateSave {
+    Grass,
+    Plowed,
+    Planted { growth: f32 },
+}
+
+impl From<CellState> for CellStateSave {
+    fn from(state: CellState) -> Self {
+        match state {
+            CellState::Grass => CellStateSave::Grass,
+            CellState::Plowed => CellStateSave::Plowed,
+            CellState::Planted { growth } => CellStateSave::Planted { growth },
+        }
+    }
+}
+
+impl From<CellStateSave> for CellState {
+    fn from(save: CellStateSave) -> Self {
+        match save {
+            CellStateSave::Grass => CellState::Grass,
+            CellStateSave::Plowed => CellState::Plowed,
+            CellStateSave::Planted { growth } => CellState::Planted { growth },
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct SaveData {
+    seeds: u32,
+    potatoes: u32,
+    farmer_grid_x: usize,
+    farmer_grid_z: usize,
+    field: Vec<Vec<CellStateSave>>,
 }
 
 struct DirtParticle {
@@ -86,7 +126,7 @@ impl Game {
         let start_pos = Self::cell_center(start_x, start_z);
         let cam_target = start_pos + vec3(0.0, 0.8, 0.0);
 
-        Self {
+        let mut game = Self {
             field: [[CellState::Grass; GRID]; GRID],
             farmer: Farmer {
                 grid_x: start_x,
@@ -107,7 +147,15 @@ impl Game {
             action_cooldown: 0.0,
             msg_timer: 0.0,
             status_msg: String::new(),
+        };
+
+        // Auto-load saved game if it exists
+        if std::path::Path::new(SAVE_FILE).exists() {
+            game.load_game();
+            game.set_msg("Welcome back! Auto-loaded saved game.");
         }
+
+        game
     }
 
     fn cell_center(grid_x: usize, grid_z: usize) -> Vec3 {
@@ -124,7 +172,58 @@ impl Game {
 
     fn set_msg(&mut self, text: &str) {
         self.status_msg = text.to_string();
-        self.msg_timer = 3.0;
+        self.msg_timer = 3.5;
+    }
+
+    fn save_game(&mut self) {
+        let field_save: Vec<Vec<CellStateSave>> = self
+            .field
+            .iter()
+            .map(|row| row.iter().map(|c| CellStateSave::from(*c)).collect())
+            .collect();
+
+        let save_data = SaveData {
+            seeds: self.seeds,
+            potatoes: self.potatoes,
+            farmer_grid_x: self.farmer.grid_x,
+            farmer_grid_z: self.farmer.grid_z,
+            field: field_save,
+        };
+
+        if let Ok(json) = serde_json::to_string_pretty(&save_data) {
+            if let Ok(mut file) = File::create(SAVE_FILE) {
+                if file.write_all(json.as_bytes()).is_ok() {
+                    self.set_msg("Game Saved to savegame.json!");
+                    return;
+                }
+            }
+        }
+        self.set_msg("Failed to save game!");
+    }
+
+    fn load_game(&mut self) -> bool {
+        if let Ok(mut file) = File::open(SAVE_FILE) {
+            let mut contents = String::new();
+            if file.read_to_string(&mut contents).is_ok() {
+                if let Ok(data) = serde_json::from_str::<SaveData>(&contents) {
+                    self.seeds = data.seeds;
+                    self.potatoes = data.potatoes;
+                    self.farmer.grid_x = data.farmer_grid_x.min(GRID - 1);
+                    self.farmer.grid_z = data.farmer_grid_z.min(GRID - 1);
+                    self.farmer.position = Self::cell_center(self.farmer.grid_x, self.farmer.grid_z);
+
+                    for (gx, row) in data.field.iter().enumerate().take(GRID) {
+                        for (gz, cell) in row.iter().enumerate().take(GRID) {
+                            self.field[gx][gz] = CellState::from(*cell);
+                        }
+                    }
+                    self.set_msg("Game Loaded from savegame.json!");
+                    return true;
+                }
+            }
+        }
+        self.set_msg("No save file found!");
+        false
     }
 
     fn spawn_dirt(&mut self, pos: Vec3) {
@@ -243,7 +342,6 @@ impl Game {
     }
 
     fn handle_movement_input(&mut self) {
-        // Allow responsive queueing when nearing destination cell for buttery smooth continuous movement
         if self.distance_to_cell_center() > 0.25 {
             return;
         }
@@ -278,9 +376,17 @@ impl Game {
         self.farmer.step_cooldown = (self.farmer.step_cooldown - dt).max(0.0);
         self.msg_timer = (self.msg_timer - dt).max(0.0);
 
+        // Save & Load Hotkeys
+        if is_key_pressed(KeyCode::F5) || is_key_pressed(KeyCode::K) {
+            self.save_game();
+        }
+        if is_key_pressed(KeyCode::F9) || is_key_pressed(KeyCode::L) {
+            self.load_game();
+        }
+
         self.handle_movement_input();
 
-        // Buttery smooth constant velocity movement towards target cell
+        // Constant velocity movement towards target cell
         let target = Self::cell_center(self.farmer.grid_x, self.farmer.grid_z);
         let to_target = target - self.farmer.position;
         let dist = to_target.length();
@@ -361,7 +467,6 @@ fn draw_field(game: &Game) {
 
             match state {
                 CellState::Grass => {
-                    // Base grass block with organic color variation
                     let color_variation = cell_hash(gx, gz, 0);
                     let grass_green = Color::from_rgba(
                         (65.0 + color_variation * 18.0) as u8,
@@ -376,7 +481,6 @@ fn draw_field(game: &Game) {
                         grass_green,
                     );
 
-                    // Small grass tufts on some tiles
                     if cell_hash(gx, gz, 1) > 0.7 {
                         let tuft_x = (cell_hash(gx, gz, 2) - 0.5) * 1.2;
                         let tuft_z = (cell_hash(gx, gz, 3) - 0.5) * 1.2;
@@ -393,7 +497,6 @@ fn draw_field(game: &Game) {
                 CellState::Plowed | CellState::Planted { .. } => {
                     let is_planted = matches!(state, CellState::Planted { .. });
 
-                    // Dark damp sub-soil base
                     let base_color = if is_planted {
                         Color::from_rgba(45, 28, 14, 255)
                     } else {
@@ -406,7 +509,6 @@ fn draw_field(game: &Game) {
                         base_color,
                     );
 
-                    // Optimized 3 parallel tilled soil furrows for high FPS and crisp 3D texture
                     let num_furrows = 3;
                     let furrow_w = (CELL * 0.92) / num_furrows as f32;
                     for i in 0..num_furrows {
@@ -420,7 +522,6 @@ fn draw_field(game: &Game) {
                         let b = (28.0 + noise * 12.0) as u8;
                         let ridge_color = Color::from_rgba(r, g, b, 255);
 
-                        // Ridge mound
                         draw_cube(
                             pos,
                             vec3(furrow_w * 0.8, 0.1, CELL * 0.94),
@@ -429,7 +530,6 @@ fn draw_field(game: &Game) {
                         );
                     }
 
-                    // Optimized soil clods (3 per tile for performance)
                     for c in 0..3 {
                         let h_x = cell_hash(gx, gz, 20 + c * 3);
                         let h_z = cell_hash(gx, gz, 21 + c * 3);
@@ -451,7 +551,6 @@ fn draw_field(game: &Game) {
                 }
             }
 
-            // Draw crop if planted
             if let CellState::Planted { growth } = state {
                 draw_potato_plant(center, growth);
             }
@@ -462,7 +561,6 @@ fn draw_field(game: &Game) {
 fn draw_potato_plant(center: Vec3, growth: f32) {
     let height = 0.15 + growth * 1.1;
 
-    // Stem
     draw_cylinder(
         center + vec3(0.0, height / 2.0 + 0.08, 0.0),
         0.06,
@@ -472,7 +570,6 @@ fn draw_potato_plant(center: Vec3, growth: f32) {
         Color::from_rgba(45, 120, 40, 255),
     );
 
-    // Leaves
     if growth > 0.25 {
         draw_sphere(
             center + vec3(-0.2, 0.45 + growth * 0.4, 0.0),
@@ -489,7 +586,6 @@ fn draw_potato_plant(center: Vec3, growth: f32) {
         );
     }
 
-    // Ready to harvest ripe potatoes sticking out of rich soil
     if growth > 0.85 {
         let potato = Color::from_rgba(170, 125, 70, 255);
         draw_sphere(center + vec3(-0.15, 0.14, 0.12), 0.13, None, potato);
@@ -503,7 +599,6 @@ fn draw_farmer_3d(farmer: &Farmer) {
     let forward = vec3(farmer.facing.sin(), 0.0, farmer.facing.cos());
     let right = vec3(forward.z, 0.0, -forward.x);
 
-    // Boots / Legs
     draw_cylinder(
         pos + right * 0.12 + vec3(0.0, 0.25, 0.0),
         0.09,
@@ -521,7 +616,6 @@ fn draw_farmer_3d(farmer: &Farmer) {
         Color::from_rgba(30, 40, 60, 255),
     );
 
-    // Camo vest / shirt
     draw_cylinder(
         pos + vec3(0.0, 0.75, 0.0),
         0.28,
@@ -531,7 +625,6 @@ fn draw_farmer_3d(farmer: &Farmer) {
         Color::from_rgba(110, 75, 45, 255),
     );
 
-    // Head (African skin tone)
     draw_sphere(
         pos + vec3(0.0, 1.35, 0.0),
         0.25,
@@ -539,7 +632,6 @@ fn draw_farmer_3d(farmer: &Farmer) {
         Color::from_rgba(85, 50, 30, 255),
     );
 
-    // Nose
     draw_sphere(
         pos + forward * 0.22 + vec3(0.0, 1.35, 0.0),
         0.04,
@@ -547,7 +639,6 @@ fn draw_farmer_3d(farmer: &Farmer) {
         Color::from_rgba(70, 40, 20, 255),
     );
 
-    // Arms
     draw_cylinder(
         pos + right * 0.35 + vec3(0.0, 0.85, 0.0),
         0.07,
@@ -565,7 +656,6 @@ fn draw_farmer_3d(farmer: &Farmer) {
         Color::from_rgba(85, 50, 30, 255),
     );
 
-    // Straw Hat
     draw_cylinder(
         pos + vec3(0.0, 1.65, 0.0),
         0.15,
@@ -583,7 +673,6 @@ fn draw_farmer_3d(farmer: &Farmer) {
         Color::from_rgba(230, 190, 100, 255),
     );
 
-    // Farming Hoe / Tool
     draw_line_3d(
         pos + right * 0.35 + vec3(0.0, 0.8, 0.0),
         pos + forward * 0.8 + vec3(0.0, 0.3, 0.0),
@@ -600,7 +689,6 @@ fn draw_farmer_3d(farmer: &Farmer) {
     }
 }
 
-// Draw realistic African Gun Runner Shack (Seed Mill) & Fortified Outpost
 fn draw_african_gun_runner_shack(pos: Vec3, is_main_station: bool, game: &Game) {
     let wood_dark = Color::from_rgba(85, 55, 35, 255);
     let wood_plank = Color::from_rgba(120, 80, 48, 255);
@@ -609,7 +697,6 @@ fn draw_african_gun_runner_shack(pos: Vec3, is_main_station: bool, game: &Game) 
     let sandbag_color = Color::from_rgba(185, 165, 120, 255);
     let ammo_green = Color::from_rgba(65, 85, 50, 255);
 
-    // 1. MAIN SHACK BODY
     draw_cube(
         pos + vec3(0.0, 1.3, 0.0),
         vec3(3.2, 2.6, 3.2),
@@ -617,7 +704,6 @@ fn draw_african_gun_runner_shack(pos: Vec3, is_main_station: bool, game: &Game) 
         wood_dark,
     );
 
-    // Wooden wall cladding stripes
     for i in 0..5 {
         let y_offset = 0.3 + i as f32 * 0.5;
         draw_cube(
@@ -646,10 +732,8 @@ fn draw_african_gun_runner_shack(pos: Vec3, is_main_station: bool, game: &Game) 
         );
     }
 
-    // 2. CORRUGATED RUSTY TIN ROOF (Slanted)
     let roof_center = pos + vec3(0.0, 2.85, 0.0);
     draw_cube(roof_center, vec3(3.8, 0.18, 3.8), None, metal_roof);
-    // Roof rust patches & corrugated ridges
     for r in 0..4 {
         let rx = -1.4 + r as f32 * 0.93;
         draw_cube(
@@ -660,7 +744,6 @@ fn draw_african_gun_runner_shack(pos: Vec3, is_main_station: bool, game: &Game) 
         );
     }
 
-    // 3. FRONT PORCH & SUPPORT LOG PILLARS
     let porch_z = 2.4;
     draw_cylinder(
         pos + vec3(-1.4, 1.1, porch_z),
@@ -679,7 +762,6 @@ fn draw_african_gun_runner_shack(pos: Vec3, is_main_station: bool, game: &Game) 
         wood_dark,
     );
 
-    // Porch tin canopy
     draw_cube(
         pos + vec3(0.0, 2.3, 2.0),
         vec3(3.6, 0.1, 1.6),
@@ -687,7 +769,6 @@ fn draw_african_gun_runner_shack(pos: Vec3, is_main_station: bool, game: &Game) 
         metal_rust,
     );
 
-    // Doorway cutout
     draw_cube(
         pos + vec3(0.0, 0.9, 1.61),
         vec3(1.1, 1.8, 0.06),
@@ -695,12 +776,10 @@ fn draw_african_gun_runner_shack(pos: Vec3, is_main_station: bool, game: &Game) 
         Color::from_rgba(20, 15, 10, 255),
     );
 
-    // 4. DEFENSIVE SANDBAG BARRICADE (Around shack base)
     let sb_h = 0.22;
     let sb_w = 0.45;
     let sb_l = 0.9;
 
-    // Front sandbag wall
     for s in 0..3 {
         let sx = -1.2 + s as f32 * 1.2;
         draw_cube(
@@ -717,7 +796,6 @@ fn draw_african_gun_runner_shack(pos: Vec3, is_main_station: bool, game: &Game) 
         );
     }
 
-    // Side sandbags
     draw_cube(
         pos + vec3(-1.8, sb_h * 0.5, 0.8),
         vec3(sb_w, sb_h, sb_l),
@@ -731,8 +809,6 @@ fn draw_african_gun_runner_shack(pos: Vec3, is_main_station: bool, game: &Game) 
         sandbag_color,
     );
 
-    // 5. MILITARY AMMO CRATES & CARGO BOXES
-    // Green ammo crates stacked on front porch
     draw_cube(
         pos + vec3(1.1, 0.25, 1.9),
         vec3(0.7, 0.5, 0.5),
@@ -752,7 +828,6 @@ fn draw_african_gun_runner_shack(pos: Vec3, is_main_station: bool, game: &Game) 
         ammo_green,
     );
 
-    // Wooden supply box on left side
     draw_cube(
         pos + vec3(-1.1, 0.3, 1.8),
         vec3(0.65, 0.6, 0.6),
@@ -760,14 +835,13 @@ fn draw_african_gun_runner_shack(pos: Vec3, is_main_station: bool, game: &Game) 
         Color::from_rgba(140, 95, 55, 255),
     );
 
-    // 6. RUSTY FUEL BARRELS / OIL DRUMS
     draw_cylinder(
         pos + vec3(-1.9, 0.5, 0.0),
         0.32,
         0.32,
         1.0,
         None,
-        Color::from_rgba(180, 50, 40, 255), // Red barrel
+        Color::from_rgba(180, 50, 40, 255),
     );
     draw_cylinder(
         pos + vec3(-1.9, 0.5, -0.7),
@@ -775,26 +849,22 @@ fn draw_african_gun_runner_shack(pos: Vec3, is_main_station: bool, game: &Game) 
         0.3,
         1.0,
         None,
-        Color::from_rgba(45, 80, 135, 255), // Blue barrel
+        Color::from_rgba(45, 80, 135, 255),
     );
 
-    // 7. AK-47 ASSAULT RIFLE LEANING AGAINST SANDBAGS
     let rifle_pos = pos + vec3(-0.7, 0.5, 2.2);
-    // Dark wooden stock
     draw_cube(
         rifle_pos,
         vec3(0.1, 0.35, 0.08),
         None,
         Color::from_rgba(90, 50, 25, 255),
     );
-    // Black steel receiver & barrel
     draw_cube(
         rifle_pos + vec3(0.0, 0.35, 0.0),
         vec3(0.06, 0.5, 0.06),
         None,
         BLACK,
     );
-    // Curved magazine
     draw_cube(
         rifle_pos + vec3(0.0, 0.25, 0.08),
         vec3(0.05, 0.18, 0.12),
@@ -802,13 +872,10 @@ fn draw_african_gun_runner_shack(pos: Vec3, is_main_station: bool, game: &Game) 
         DARKGRAY,
     );
 
-    // 8. TALL RADIO MAST ANTENNA
     let antenna_pos = pos + vec3(-1.5, 3.0, -1.5);
     draw_cylinder(antenna_pos, 0.04, 0.06, 3.5, None, DARKGRAY);
-    // Red indicator light on top
     draw_sphere(antenna_pos + vec3(0.0, 1.8, 0.0), 0.12, None, RED);
 
-    // 9. RUSTY SIGNBOARD ("SEED & AMMO MILL")
     if is_main_station {
         draw_cube(
             pos + vec3(0.0, 2.35, 2.45),
@@ -822,7 +889,6 @@ fn draw_african_gun_runner_shack(pos: Vec3, is_main_station: bool, game: &Game) 
             BLACK,
         );
 
-        // Interaction ground ring indicator when player is near station!
         if game.near_seed_station() {
             let pulse = (get_time() * 5.0).sin() as f32 * 0.1;
             draw_cylinder(
@@ -873,13 +939,9 @@ fn draw_scene(game: &Game) {
 
     draw_field(game);
 
-    // Main Gun Runner Seed Station Shack
     draw_african_gun_runner_shack(SEED_STATION_POS, true, game);
-
-    // Secondary Perimeter Outpost Watchtower Shack
     draw_african_gun_runner_shack(WATCHTOWER_POS, false, game);
 
-    // Dirt particles
     for particle in &game.dirt {
         let alpha = (particle.life * 255.0) as u8;
         draw_sphere(
@@ -895,7 +957,6 @@ fn draw_scene(game: &Game) {
         );
     }
 
-    // Sparkle particles
     for sparkle in &game.sparkles {
         let progress = sparkle.life / sparkle.max_life;
         let alpha = (progress * 255.0) as u8;
@@ -921,8 +982,8 @@ fn draw_scene(game: &Game) {
 
 fn draw_hud(game: &Game) {
     // Header Panel Background
-    draw_rectangle(10.0, 10.0, 420.0, 190.0, Color::from_rgba(20, 25, 30, 200));
-    draw_rectangle_lines(10.0, 10.0, 420.0, 190.0, 2.0, GOLD);
+    draw_rectangle(10.0, 10.0, 450.0, 215.0, Color::from_rgba(20, 25, 30, 200));
+    draw_rectangle_lines(10.0, 10.0, 450.0, 215.0, 2.0, GOLD);
 
     draw_text("AFRICAN GUN RUNNER POTATO FARM", 20.0, 34.0, 20.0, GOLD);
     draw_text("WASD / Arrows - Move Farmer", 20.0, 60.0, 18.0, WHITE);
@@ -940,10 +1001,11 @@ fn draw_hud(game: &Game) {
         18.0,
         WHITE,
     );
+    draw_text("F5 / K - Save Game   |   F9 / L - Load Game", 20.0, 126.0, 18.0, SKYBLUE);
 
     // Inventory Stats
     let inv_text = format!("Seeds: {}   Potatoes: {}", game.seeds, game.potatoes);
-    draw_text(&inv_text, 20.0, 136.0, 24.0, YELLOW);
+    draw_text(&inv_text, 20.0, 158.0, 24.0, YELLOW);
 
     // Tile Status
     let gx = game.farmer.grid_x;
@@ -956,7 +1018,7 @@ fn draw_hud(game: &Game) {
         }
         CellState::Planted { growth } => format!("Tile: Growing... {}%", (growth * 100.0) as u32),
     };
-    draw_text(&status, 20.0, 164.0, 18.0, LIGHTGRAY);
+    draw_text(&status, 20.0, 188.0, 18.0, LIGHTGRAY);
 
     // Station Proximity HUD Banner
     if game.near_seed_station() {
@@ -976,10 +1038,10 @@ fn draw_hud(game: &Game) {
 
     // Temporary Status Feedback Message
     if game.msg_timer > 0.0 {
-        let msg_x = screen_width() / 2.0 - 240.0;
+        let msg_x = screen_width() / 2.0 - 250.0;
         let msg_y = 30.0;
-        draw_rectangle(msg_x, msg_y, 480.0, 40.0, Color::from_rgba(180, 50, 40, 220));
-        draw_rectangle_lines(msg_x, msg_y, 480.0, 40.0, 2.0, WHITE);
+        draw_rectangle(msg_x, msg_y, 500.0, 40.0, Color::from_rgba(30, 60, 90, 230));
+        draw_rectangle_lines(msg_x, msg_y, 500.0, 40.0, 2.0, GOLD);
         draw_text(&game.status_msg, msg_x + 15.0, msg_y + 26.0, 18.0, WHITE);
     }
 }
