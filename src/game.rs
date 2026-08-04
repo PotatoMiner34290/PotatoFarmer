@@ -485,14 +485,15 @@ impl Game {
         self.camera.target = self.camera.target.lerp(desired_target, t);
         self.camera.position = self.camera.target + CAM_OFFSET;
 
-        // Crop Growth
-        for row in self.field.iter_mut() {
+        // Parallel Crop Growth using Rayon (Multi-core simulation)
+        use rayon::prelude::*;
+        self.field.par_iter_mut().for_each(|row| {
             for cell in row.iter_mut() {
                 if let CellState::Planted { growth } = cell {
                     *growth = (*growth + dt / GROW_TIME).min(1.0);
                 }
             }
-        }
+        });
 
         // Particle Physics
         for particle in self.dirt.iter_mut() {
@@ -509,8 +510,10 @@ impl Game {
         }
         self.sparkles.retain(|s| s.life > 0.0);
 
-        // --- NEW THIEF CHILDREN EVENT (Only applicable once player reaches 150 potatoes!) ---
-        if self.potatoes >= 150 || !self.children.is_empty() {
+        // --- THIEF CHILDREN EVENT ---
+        // Children spawn whenever turrets are unlocked, OR if player has potatoes growing/harvested
+        let has_planted_crops = self.field.iter().any(|row| row.iter().any(|cell| matches!(cell, CellState::Planted { .. })));
+        if self.turrets_unlocked || (has_planted_crops && (self.potatoes > 0 || self.seeds > 0)) || !self.children.is_empty() {
             self.steal_timer += dt;
 
             // Every 6 seconds, spawn a group of thief children to raid 5 potato fields
@@ -540,9 +543,12 @@ impl Game {
                     self.children.push(ThiefChild {
                         position: spawn_pos,
                         target_cell: Some((gx, gz)),
-                        speed: 7.5,
+                        speed: 6.5,
                         fleeing: false,
                         alive: true,
+                        facing: 0.0,
+                        anim_timer: rand::gen_range(0.0, 10.0),
+                        harvesting_timer: 0.0,
                     });
                 }
 
@@ -552,11 +558,13 @@ impl Game {
             }
         }
 
-        // Update Thief Children AI
+        // Update Thief Children AI with Harvesting & Running animations
         for child in self.children.iter_mut() {
             if !child.alive {
                 continue;
             }
+
+            child.anim_timer += dt * 10.0;
 
             if !child.fleeing {
                 if let Some((gx, gz)) = child.target_cell {
@@ -565,26 +573,32 @@ impl Game {
                     let dist = to_target.length();
 
                     if dist > 0.4 {
-                        child.position += to_target.normalize() * (child.speed * dt);
+                        let move_dir = to_target.normalize();
+                        child.facing = move_dir.x.atan2(move_dir.z);
+                        child.position += move_dir * (child.speed * dt);
                     } else {
-                        // Reached potato field - Steal crop!
-                        child.fleeing = true;
-                        child.target_cell = None;
+                        // Reached potato field - Stop and Harvest the crop!
+                        child.harvesting_timer += dt;
+                        if child.harvesting_timer >= 1.2 {
+                            // Finish harvesting & start fleeing with stolen potatoes!
+                            child.fleeing = true;
+                            child.target_cell = None;
+                        }
                     }
                 } else {
                     child.fleeing = true;
                 }
             } else {
-                // Flee back towards village border
+                // Flee back towards village border carrying stolen potato sack
                 let flee_dir = (child.position - Vec3::ZERO).normalize();
+                child.facing = flee_dir.x.atan2(flee_dir.z);
                 child.position += flee_dir * (child.speed * dt);
             }
         }
 
-        // Apply crop steals once children reach target or escape
+        // Apply crop steals once children start fleeing after harvesting
         for child in self.children.iter_mut() {
             if child.fleeing && child.alive {
-                // Steal the target cell if not stolen yet
                 if let Some((gx, gz)) = child.target_cell.take() {
                     self.field[gx][gz] = CellState::Grass;
                 }

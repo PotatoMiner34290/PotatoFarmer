@@ -173,10 +173,13 @@ pub fn draw_turrets(game: &Game) {
     }
 }
 
-// Draw Thief Children
+// Draw Thief Children (Detailed small brown children models with running/harvesting animations)
 pub fn draw_thief_children(game: &Game) {
-    let skin_tone = Color::from_rgba(90, 55, 30, 255);
-    let shirt_red = Color::from_rgba(200, 60, 50, 255);
+    let skin_tone = Color::from_rgba(95, 58, 32, 255);
+    let hair_dark = Color::from_rgba(25, 18, 12, 255);
+    let shirt_red = Color::from_rgba(205, 55, 45, 255);
+    let pants_blue = Color::from_rgba(45, 65, 110, 255);
+    let sack_brown = Color::from_rgba(165, 115, 60, 255);
 
     for child in &game.children {
         if !child.alive {
@@ -184,15 +187,64 @@ pub fn draw_thief_children(game: &Game) {
         }
 
         let pos = child.position;
+        let facing = child.facing;
+        let is_harvesting = child.harvesting_timer > 0.0 && !child.fleeing;
+        let leg_swing = if is_harvesting { 0.0 } else { (child.anim_timer).sin() * 0.25 };
+        let arm_swing = if is_harvesting { 0.3 } else { (child.anim_timer).cos() * 0.3 };
 
-        // Body
-        draw_cylinder(pos + vec3(0.0, 0.45, 0.0), 0.18, 0.16, 0.6, None, shirt_red);
-        // Head
-        draw_sphere(pos + vec3(0.0, 0.95, 0.0), 0.18, None, skin_tone);
+        let forward = vec3(facing.sin(), 0.0, facing.cos());
+        let right = vec3(forward.z, 0.0, -forward.x);
 
-        // Carrying Stolen Potato Bag on Back if Fleeing!
+        // 1. Legs (Left and Right with walking/running swing)
+        let l_leg_pos = pos + right * 0.09 + forward * leg_swing + vec3(0.0, 0.18, 0.0);
+        let r_leg_pos = pos - right * 0.09 - forward * leg_swing + vec3(0.0, 0.18, 0.0);
+        draw_cylinder(l_leg_pos, 0.05, 0.05, 0.36, None, pants_blue);
+        draw_cylinder(r_leg_pos, 0.05, 0.05, 0.36, None, pants_blue);
+
+        // Bare feet
+        draw_sphere(l_leg_pos - vec3(0.0, 0.18, 0.0) + forward * 0.04, 0.05, None, skin_tone);
+        draw_sphere(r_leg_pos - vec3(0.0, 0.18, 0.0) + forward * 0.04, 0.05, None, skin_tone);
+
+        // 2. Torso (Short shirt, leaning forward slightly when running/harvesting)
+        let lean_offset = if is_harvesting { forward * 0.15 - vec3(0.0, 0.1, 0.0) } else { forward * 0.05 };
+        let torso_pos = pos + vec3(0.0, 0.52, 0.0) + lean_offset;
+        draw_cylinder(torso_pos, 0.16, 0.14, 0.42, None, shirt_red);
+
+        // 3. Arms (Left and Right swinging or reaching down to harvest potatoes)
+        if is_harvesting {
+            // Reaching down to pick potatoes from soil
+            let reach_pos = torso_pos + forward * 0.2 - vec3(0.0, 0.22, 0.0);
+            draw_cylinder(reach_pos + right * 0.1, 0.04, 0.04, 0.35, None, skin_tone);
+            draw_cylinder(reach_pos - right * 0.1, 0.04, 0.04, 0.35, None, skin_tone);
+            // Soil rustle effect while harvesting
+            draw_sphere(reach_pos + vec3(0.0, -0.1, 0.0), 0.12, None, Color::from_rgba(110, 80, 45, 200));
+        } else {
+            // Running arm movements
+            let l_arm_pos = torso_pos + right * 0.18 - forward * arm_swing;
+            let r_arm_pos = torso_pos - right * 0.18 + forward * arm_swing;
+            draw_cylinder(l_arm_pos, 0.04, 0.04, 0.36, None, skin_tone);
+            draw_cylinder(r_arm_pos, 0.04, 0.04, 0.36, None, skin_tone);
+        }
+
+        // 4. Head & Hair
+        let head_pos = torso_pos + vec3(0.0, 0.32, 0.0);
+        draw_sphere(head_pos, 0.16, None, skin_tone);
+        // Short dark hair cap
+        draw_sphere(head_pos + vec3(0.0, 0.04, 0.0), 0.165, None, hair_dark);
+        // Eyes
+        draw_sphere(head_pos + forward * 0.14 + right * 0.05 + vec3(0.0, 0.02, 0.0), 0.025, None, WHITE);
+        draw_sphere(head_pos + forward * 0.14 - right * 0.05 + vec3(0.0, 0.02, 0.0), 0.025, None, WHITE);
+        draw_sphere(head_pos + forward * 0.155 + right * 0.05 + vec3(0.0, 0.02, 0.0), 0.012, None, BLACK);
+        draw_sphere(head_pos + forward * 0.155 - right * 0.05 + vec3(0.0, 0.02, 0.0), 0.012, None, BLACK);
+
+        // 5. Carrying Stolen Potato Sack on back when fleeing!
         if child.fleeing {
-            draw_sphere(pos + vec3(0.0, 0.5, -0.25), 0.22, None, Color::from_rgba(160, 110, 55, 255));
+            let sack_pos = torso_pos - forward * 0.18 + vec3(0.0, 0.05, 0.0);
+            draw_sphere(sack_pos, 0.24, None, sack_brown);
+            // Stolen potatoes sticking out of sack
+            let potato_color = Color::from_rgba(170, 125, 70, 255);
+            draw_sphere(sack_pos + vec3(0.05, 0.18, 0.0), 0.07, None, potato_color);
+            draw_sphere(sack_pos + vec3(-0.06, 0.16, 0.04), 0.06, None, potato_color);
         }
     }
 }
@@ -276,6 +328,7 @@ pub fn draw_field(game: &Game) {
 pub fn draw_potato_plant(center: Vec3, growth: f32) {
     let height = 0.15 + growth * 1.1;
 
+    // Main stem
     draw_cylinder(
         center + vec3(0.0, height / 2.0 + 0.08, 0.0),
         0.06,
@@ -285,27 +338,21 @@ pub fn draw_potato_plant(center: Vec3, growth: f32) {
         Color::from_rgba(45, 120, 40, 255),
     );
 
+    // Foliage bush (single merged sphere when growing instead of multiple sub-spheres)
     if growth > 0.25 {
         draw_sphere(
-            center + vec3(-0.2, 0.45 + growth * 0.4, 0.0),
-            0.15 + growth * 0.15,
+            center + vec3(0.0, 0.45 + growth * 0.4, 0.0),
+            0.22 + growth * 0.18,
             None,
-            Color::from_rgba(55, 160, 50, 255),
-        );
-
-        draw_sphere(
-            center + vec3(0.2, 0.5 + growth * 0.4, 0.0),
-            0.15 + growth * 0.15,
-            None,
-            Color::from_rgba(50, 140, 45, 255),
+            Color::from_rgba(55, 155, 48, 255),
         );
     }
 
+    // Mature Potatoes (2 distinct potatoes instead of 3 extra spheres per plant)
     if growth > 0.85 {
         let potato = Color::from_rgba(170, 125, 70, 255);
-        draw_sphere(center + vec3(-0.15, 0.14, 0.12), 0.13, None, potato);
-        draw_sphere(center + vec3(0.15, 0.12, -0.1), 0.12, None, potato);
-        draw_sphere(center + vec3(0.0, 0.15, -0.18), 0.11, None, potato);
+        draw_sphere(center + vec3(-0.15, 0.14, 0.1), 0.14, None, potato);
+        draw_sphere(center + vec3(0.15, 0.12, -0.1), 0.13, None, potato);
     }
 }
 

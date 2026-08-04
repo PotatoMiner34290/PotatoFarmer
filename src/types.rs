@@ -119,6 +119,9 @@ pub struct ThiefChild {
     pub speed: f32,
     pub fleeing: bool,
     pub alive: bool,
+    pub facing: f32,
+    pub anim_timer: f32,
+    pub harvesting_timer: f32,
 }
 
 pub struct Turret {
