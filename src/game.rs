@@ -31,8 +31,34 @@ pub struct Game {
     // Cold War African Rebel Gunboats Raid
     pub gunboats: Vec<GunBoat>,
     pub rebels: Vec<Rebel>,
+    pub rebel_bullets: Vec<RebelBullet>,
+    pub game_over: bool,
+    pub menu_open: bool,
     pub raid_timer: f32,
     pub sfx: SoundEffects,
+    // New Currencies & Weapon Items
+    pub blood_diamonds: u32,
+    pub cash: u32,
+    pub panther_statues: u32,
+    pub gold: u32,
+    pub bullets_count: u32,
+    pub minigun_unlocked: bool,
+    pub minigun_cooldown: f32,
+    pub minigun_bullets: Vec<MinigunBullet>,
+    // Hidden Inventory Unlocks (only visible once picked up)
+    pub has_unlocked_blood_diamonds: bool,
+    pub has_unlocked_cash: bool,
+    pub has_unlocked_panther_statue: bool,
+    pub has_unlocked_gold: bool,
+    pub has_unlocked_bullets: bool,
+    pub has_unlocked_minigun: bool,
+    // Ground Dropped Loot & Crashing B2 Bombers
+    pub dropped_loot: Vec<DroppedLoot>,
+    pub crashing_bombers: Vec<CrashingBomber>,
+    // Market Dedicated GUI & Worker Slaves
+    pub market_menu_open: bool,
+    pub ai_slaves: Vec<AiSlave>,
+    pub ai_slave_mode: u8, // 0 = Plant & Harvest, 1 = Plant Only
 }
 
 impl Game {
@@ -73,6 +99,8 @@ impl Game {
                 facing: 0.0,
                 plowing: false,
                 step_cooldown: 0.0,
+                hp: 100.0,
+                max_hp: 100.0,
             },
             camera: CameraState {
                 position: cam_target + CAM_OFFSET,
@@ -106,6 +134,9 @@ impl Game {
             iron_dome_missiles: Vec::new(),
             gunboats: Vec::new(),
             rebels: Vec::new(),
+            rebel_bullets: Vec::new(),
+            game_over: false,
+            menu_open: false,
             raid_timer: 0.0,
             sfx: SoundEffects {
                 turret_fire: None,
@@ -115,6 +146,25 @@ impl Game {
                 boat_engine: None,
                 thief_giggle: None,
             },
+            blood_diamonds: 0,
+            cash: 0,
+            panther_statues: 0,
+            gold: 0,
+            bullets_count: 0,
+            minigun_unlocked: false,
+            minigun_cooldown: 0.0,
+            minigun_bullets: Vec::new(),
+            has_unlocked_blood_diamonds: false,
+            has_unlocked_cash: false,
+            has_unlocked_panther_statue: false,
+            has_unlocked_gold: false,
+            has_unlocked_bullets: false,
+            has_unlocked_minigun: false,
+            dropped_loot: Vec::new(),
+            crashing_bombers: Vec::new(),
+            market_menu_open: false,
+            ai_slaves: Vec::new(),
+            ai_slave_mode: 0,
         };
 
         if std::path::Path::new(SAVE_FILE).exists() {
@@ -210,6 +260,20 @@ impl Game {
             turret_positions,
             iron_dome_positions,
             iron_domes_in_inventory: self.iron_domes_in_inventory,
+            blood_diamonds: self.blood_diamonds,
+            cash: self.cash,
+            panther_statues: self.panther_statues,
+            gold: self.gold,
+            bullets_count: self.bullets_count,
+            minigun_unlocked: self.minigun_unlocked,
+            has_unlocked_blood_diamonds: self.has_unlocked_blood_diamonds,
+            has_unlocked_cash: self.has_unlocked_cash,
+            has_unlocked_panther_statue: self.has_unlocked_panther_statue,
+            has_unlocked_gold: self.has_unlocked_gold,
+            has_unlocked_bullets: self.has_unlocked_bullets,
+            has_unlocked_minigun: self.has_unlocked_minigun,
+            ai_slaves_count: self.ai_slaves.len() as u32,
+            ai_slave_mode: self.ai_slave_mode,
         };
 
         if let Ok(json) = serde_json::to_string_pretty(&save_data) {
@@ -236,6 +300,29 @@ impl Game {
                     self.turrets_unlocked = data.turrets_unlocked;
                     self.turrets_in_inventory = data.turrets_in_inventory;
                     self.iron_domes_in_inventory = data.iron_domes_in_inventory;
+                    self.blood_diamonds = data.blood_diamonds;
+                    self.cash = data.cash;
+                    self.panther_statues = data.panther_statues;
+                    self.gold = data.gold;
+                    self.bullets_count = data.bullets_count;
+                    self.minigun_unlocked = data.minigun_unlocked;
+                    self.has_unlocked_blood_diamonds = data.has_unlocked_blood_diamonds;
+                    self.has_unlocked_cash = data.has_unlocked_cash;
+                    self.has_unlocked_panther_statue = data.has_unlocked_panther_statue;
+                    self.has_unlocked_gold = data.has_unlocked_gold;
+                    self.has_unlocked_bullets = data.has_unlocked_bullets;
+                    self.has_unlocked_minigun = data.has_unlocked_minigun;
+                    self.ai_slave_mode = data.ai_slave_mode;
+                    self.ai_slaves.clear();
+                    for i in 0..data.ai_slaves_count {
+                        self.ai_slaves.push(AiSlave {
+                            position: Self::cell_center(i as usize % GRID, (i as usize * 3) % GRID),
+                            target_cell: None,
+                            action_timer: 0.0,
+                            anim_timer: rand::gen_range(0.0, 10.0),
+                            facing: 0.0,
+                        });
+                    }
                     self.turrets.clear();
                     for (x, y, z) in data.turret_positions {
                         self.turrets.push(Turret { position: vec3(x, y, z), fire_cooldown: 0.0 });
@@ -529,6 +616,25 @@ impl Game {
     }
 
     pub fn update(&mut self, dt: f32) {
+        if is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::Tab) || is_key_pressed(KeyCode::V) {
+            self.menu_open = !self.menu_open;
+        }
+
+        if self.menu_open {
+            if is_key_pressed(KeyCode::Y) {
+                // Restart the savegame and save it to new
+                let _ = std::fs::remove_file(SAVE_FILE);
+                *self = Game::new();
+                self.save_game();
+                self.set_msg("Restarted game and initialized new savegame!");
+            }
+            return;
+        }
+
+        if self.game_over {
+            return;
+        }
+
         self.action_cooldown = (self.action_cooldown - dt).max(0.0);
         self.farmer.step_cooldown = (self.farmer.step_cooldown - dt).max(0.0);
         self.msg_timer = (self.msg_timer - dt).max(0.0);
@@ -595,17 +701,167 @@ impl Game {
             }
         }
 
-        // Market Interaction Hotkeys: [E] Trade Potatoes -> Seeds, [T] Buy Turret, [Y] Buy Iron Dome
-        if self.near_market() && self.action_cooldown <= 0.0 {
-            if is_key_pressed(KeyCode::E) {
-                self.convert_potatoes();
-                self.action_cooldown = 0.4;
-            } else if is_key_pressed(KeyCode::T) {
-                self.buy_turret_upgrade();
-                self.action_cooldown = 0.4;
-            } else if is_key_pressed(KeyCode::Y) {
-                self.buy_iron_dome_upgrade();
-                self.action_cooldown = 0.4;
+        // Dedicated Market GUI Hotkey & Quick Actions when near market
+        if self.near_market() {
+            if is_key_pressed(KeyCode::M) || is_key_pressed(KeyCode::E) {
+                self.market_menu_open = !self.market_menu_open;
+            }
+
+            if self.market_menu_open {
+                // Key 1: Sell Panther Statues
+                if is_key_pressed(KeyCode::Key1) && self.panther_statues > 0 {
+                    let earned = self.panther_statues * 2500;
+                    self.cash += earned;
+                    self.set_msg(&format!("Sold {} Panther Statues for ${} Cash!", self.panther_statues, earned));
+                    self.panther_statues = 0;
+                    self.save_game();
+                }
+                // Key 2: Sell Blood Diamonds
+                if is_key_pressed(KeyCode::Key2) && self.blood_diamonds > 0 {
+                    let earned = self.blood_diamonds * 1500;
+                    self.cash += earned;
+                    self.set_msg(&format!("Sold {} Blood Diamonds for ${} Cash!", self.blood_diamonds, earned));
+                    self.blood_diamonds = 0;
+                    self.save_game();
+                }
+                // Key 3: Sell Gold Bars
+                if is_key_pressed(KeyCode::Key3) && self.gold > 0 {
+                    let earned = self.gold * 200;
+                    self.cash += earned;
+                    self.set_msg(&format!("Sold {} Gold Bars for ${} Cash!", self.gold, earned));
+                    self.gold = 0;
+                    self.save_game();
+                }
+                // Key 4: Trade Potatoes for Seeds
+                if is_key_pressed(KeyCode::Key4) {
+                    self.convert_potatoes();
+                }
+                // Key 5: Buy AI Worker Slave (150 Potatoes or $500 Cash)
+                if is_key_pressed(KeyCode::Key5) {
+                    if self.potatoes >= 150 || self.cash >= 500 {
+                        if self.potatoes >= 150 {
+                            self.potatoes -= 150;
+                        } else {
+                            self.cash -= 500;
+                        }
+                        let spawn_pos = Self::cell_center(rand::gen_range(0, GRID), rand::gen_range(0, GRID));
+                        self.ai_slaves.push(AiSlave {
+                            position: spawn_pos,
+                            target_cell: None,
+                            action_timer: 0.0,
+                            anim_timer: rand::gen_range(0.0, 10.0),
+                            facing: 0.0,
+                        });
+                        self.set_msg("Hired AI Farm Worker Slave! They will auto-plant & harvest!");
+                        self.save_game();
+                    } else {
+                        self.set_msg("Not enough Potatoes (150) or Cash ($500) to hire AI Slave!");
+                    }
+                }
+                // Key 6: Toggle AI Slave Mode (Plant & Harvest vs Plant Only)
+                if is_key_pressed(KeyCode::Key6) {
+                    self.ai_slave_mode = if self.ai_slave_mode == 0 { 1 } else { 0 };
+                    let mode_str = if self.ai_slave_mode == 0 { "Planting & Harvesting" } else { "Planting Only" };
+                    self.set_msg(&format!("AI Worker Mode set to: {}", mode_str));
+                }
+                // Key 7: Buy Minigun Bullets (100 Bullets for $300 Cash or 40 Potatoes)
+                if is_key_pressed(KeyCode::Key7) {
+                    if self.cash >= 300 || self.potatoes >= 40 {
+                        if self.cash >= 300 {
+                            self.cash -= 300;
+                        } else {
+                            self.potatoes -= 40;
+                        }
+                        self.bullets_count += 100;
+                        self.has_unlocked_bullets = true;
+                        self.set_msg("Purchased +100 Minigun Bullets from Market!");
+                        self.save_game();
+                    } else {
+                        self.set_msg("Need $300 Cash or 40 Potatoes for 100 Minigun Bullets!");
+                    }
+                }
+                // Key T: Buy Turret
+                if is_key_pressed(KeyCode::T) {
+                    self.buy_turret_upgrade();
+                }
+                // Key Y: Buy Iron Dome
+                if is_key_pressed(KeyCode::Y) {
+                    self.buy_iron_dome_upgrade();
+                }
+            }
+        } else {
+            self.market_menu_open = false;
+        }
+
+        // --- UPDATE AI FARMER SLAVES (Auto-Planting & Auto-Harvesting) ---
+        for slave in self.ai_slaves.iter_mut() {
+            slave.anim_timer += dt * 6.0;
+            slave.action_timer += dt;
+
+            if slave.target_cell.is_none() || slave.action_timer > 3.0 {
+                // Find a cell in field needing action
+                let mut target = None;
+                for gx in 0..GRID {
+                    for gz in 0..GRID {
+                        match self.field[gx][gz] {
+                            CellState::Plowed => {
+                                target = Some((gx, gz));
+                                break;
+                            }
+                            CellState::Planted { growth } if growth >= 1.0 && self.ai_slave_mode == 0 => {
+                                target = Some((gx, gz));
+                                break;
+                            }
+                            CellState::Grass => {
+                                target = Some((gx, gz));
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                    if target.is_some() {
+                        break;
+                    }
+                }
+                slave.target_cell = target;
+                slave.action_timer = 0.0;
+            }
+
+            if let Some((gx, gz)) = slave.target_cell {
+                let cell_pos = Self::cell_center(gx, gz);
+                let to_cell = cell_pos - slave.position;
+                let dist = to_cell.length();
+
+                if dist > 0.3 {
+                    let move_dir = to_cell.normalize();
+                    slave.facing = move_dir.x.atan2(move_dir.z);
+                    slave.position += move_dir * (5.0 * dt);
+                } else {
+                    // Reached target cell - execute farming action based on mode
+                    match self.field[gx][gz] {
+                        CellState::Grass => {
+                            self.field[gx][gz] = CellState::Plowed;
+                        }
+                        CellState::Plowed => {
+                            if self.seeds > 0 {
+                                self.seeds -= 1;
+                                self.field[gx][gz] = CellState::Planted { growth: 0.0 };
+                            } else {
+                                // Auto-convert potatoes to seeds if out
+                                if self.potatoes >= 1 {
+                                    self.potatoes -= 1;
+                                    self.seeds += POTATO_TO_SEED;
+                                }
+                            }
+                        }
+                        CellState::Planted { growth } if growth >= 1.0 && self.ai_slave_mode == 0 => {
+                            self.field[gx][gz] = CellState::Plowed;
+                            self.potatoes += 3;
+                        }
+                        _ => {}
+                    }
+                    slave.target_cell = None;
+                }
             }
         }
 
@@ -759,26 +1015,31 @@ impl Game {
         self.children.retain(|c| c.alive && c.position.length() < 40.0);
 
         // --- AFRICAN REBEL GUNBOATS RIVER RAID EVENT ---
-        self.raid_timer += dt;
-        if self.raid_timer >= 35.0 {
-            self.raid_timer = 0.0;
+        // Spawn African Rebel gunboat raids twice as often as B-2 bomber (every 30s) if player has deployed turrets!
+        if !self.turrets.is_empty() {
+            self.raid_timer += dt;
+            if self.raid_timer >= 30.0 {
+                self.raid_timer = 0.0;
 
-            // Spawn Cold War GunBoat cruising along the River (x ≈ -31.0)
-            let spawn_z = if rand::gen_range(0.0, 1.0) < 0.5 { -36.0 } else { 36.0 };
-            let target_z = 0.0; // Dock near bridge
+                // Only spawn a gunboat if current rebels count is < 3
+                if self.rebels.len() < 3 {
+                let spawn_z = if rand::gen_range(0.0, 1.0) < 0.5 { -36.0 } else { 36.0 };
+                let target_z = 0.0; // Dock near bridge
 
-            self.gunboats.push(GunBoat {
-                position: vec3(-31.0, -0.1, spawn_z),
-                target_z,
-                hp: 20.0,
-                max_hp: 20.0,
-                disembarked: false,
-                disembark_timer: 0.0,
-                alive: true,
-            });
+                self.gunboats.push(GunBoat {
+                    position: vec3(-31.0, -0.1, spawn_z),
+                    target_z,
+                    hp: 20.0,
+                    max_hp: 20.0,
+                    disembarked: false,
+                    disembark_timer: 0.0,
+                    alive: true,
+                });
 
-            self.set_msg("NAVY ALERT! Cold War African Rebel GunBoat entering River!");
+                self.set_msg("NAVY ALERT! Cold War African Rebel GunBoat entering River!");
+            }
         }
+    }
 
         // Update Gunboats
         for boat in self.gunboats.iter_mut() {
@@ -795,9 +1056,10 @@ impl Game {
                 boat.disembark_timer += dt;
                 if boat.disembark_timer >= 4.0 && !boat.disembarked {
                     boat.disembarked = true;
-                    // Disembark 4 armed rebels to raid farm!
-                    for i in 0..4 {
-                        let offset_z = -1.5 + i as f32 * 1.0;
+                    // Disembark up to 3 armed rebels to raid farm (max 3 allowed overall)
+                    let spawn_count = 3_usize.saturating_sub(self.rebels.len());
+                    for i in 0..spawn_count {
+                        let offset_z = -1.0 + i as f32 * 1.0;
                         self.rebels.push(Rebel {
                             position: vec3(-27.0, 0.0, offset_z),
                             target_cell: Some((rand::gen_range(0, GRID), rand::gen_range(0, GRID))),
@@ -808,6 +1070,7 @@ impl Game {
                             facing: 1.57,
                             anim_timer: 0.0,
                             raiding_timer: 0.0,
+                            shoot_cooldown: rand::gen_range(0.2, 1.0),
                         });
                     }
                 }
@@ -815,14 +1078,32 @@ impl Game {
         }
         self.gunboats.retain(|b| b.alive);
 
-        // Update Disembarked Rebels
+        // Update Disembarked Rebels & AK-47 Shooting at Farmer
+        let farmer_pos = self.farmer.position;
         for rebel in self.rebels.iter_mut() {
             if !rebel.alive {
                 continue;
             }
 
             rebel.anim_timer += dt * 8.0;
-            if let Some((gx, gz)) = rebel.target_cell {
+            rebel.shoot_cooldown = (rebel.shoot_cooldown - dt).max(0.0);
+
+            // Turn to face farmer and fire AK-47 if within range (25 units)
+            let to_farmer = farmer_pos - rebel.position;
+            let dist_to_farmer = to_farmer.length();
+            if dist_to_farmer < 25.0 {
+                rebel.facing = to_farmer.x.atan2(to_farmer.z);
+                if rebel.shoot_cooldown <= 0.0 {
+                    rebel.shoot_cooldown = 0.8;
+                    let muzzle = rebel.position + vec3(0.0, 1.0, 0.0) + vec3(rebel.facing.sin(), 0.0, rebel.facing.cos()) * 0.5;
+                    let dir = (farmer_pos + vec3(0.0, 0.8, 0.0) - muzzle).normalize();
+                    self.rebel_bullets.push(RebelBullet {
+                        position: muzzle,
+                        velocity: dir * 35.0,
+                        life: 1.2,
+                    });
+                }
+            } else if let Some((gx, gz)) = rebel.target_cell {
                 let target_pos = Self::cell_center(gx, gz);
                 let to_target = target_pos - rebel.position;
                 let dist = to_target.length();
@@ -841,6 +1122,24 @@ impl Game {
             }
         }
         self.rebels.retain(|r| r.alive);
+
+        // Update Rebel AK-47 Bullets (Damages Farmer only)
+        for bullet in self.rebel_bullets.iter_mut() {
+            bullet.position += bullet.velocity * dt;
+            bullet.life -= dt;
+
+            // Damage Farmer on hit (12 damage per AK-47 bullet)
+            if bullet.position.distance(self.farmer.position + vec3(0.0, 0.8, 0.0)) < 1.0 {
+                self.farmer.hp = (self.farmer.hp - 12.0).max(0.0);
+                bullet.life = 0.0;
+                if self.farmer.hp <= 0.0 {
+                    self.game_over = true;
+                    // Delete save file on permanent death!
+                    let _ = std::fs::remove_file(SAVE_FILE);
+                }
+            }
+        }
+        self.rebel_bullets.retain(|b| b.life > 0.0);
 
         // --- AUTOMATED DEFENSE TURRETS ENGINE ---
         if !self.turrets.is_empty() {
@@ -940,6 +1239,227 @@ impl Game {
             self.turret_bullets.retain(|b| b.life > 0.0);
         }
 
+        // Automated & Manual Heavy Minigun Firing (Auto-targets Rebels, Gunboats & Thief Children!)
+        self.minigun_cooldown = (self.minigun_cooldown - dt).max(0.0);
+        if self.minigun_unlocked && self.bullets_count > 0 && self.minigun_cooldown <= 0.0 {
+            let f_pos = self.farmer.position + vec3(0.0, 0.8, 0.0);
+
+            // Auto-Target Priority: Rebels > Gunboats > Thief Children
+            let mut target_found = None;
+            for rebel in self.rebels.iter() {
+                if rebel.alive && f_pos.distance(rebel.position) < 28.0 {
+                    target_found = Some(rebel.position + vec3(0.0, 0.6, 0.0));
+                    break;
+                }
+            }
+            if target_found.is_none() {
+                for boat in self.gunboats.iter() {
+                    if boat.alive && f_pos.distance(boat.position) < 32.0 {
+                        target_found = Some(boat.position + vec3(0.0, 0.8, 0.0));
+                        break;
+                    }
+                }
+            }
+            if target_found.is_none() {
+                for child in self.children.iter() {
+                    if child.alive && f_pos.distance(child.position) < 25.0 {
+                        target_found = Some(child.position + vec3(0.0, 0.6, 0.0));
+                        break;
+                    }
+                }
+            }
+
+            let manual_fire = is_mouse_button_down(MouseButton::Left) || is_key_down(KeyCode::F) || is_key_down(KeyCode::M);
+
+            if let Some(target_pos) = target_found {
+                // Auto-aim towards nearest threat
+                let dir = (target_pos - f_pos).normalize();
+                self.farmer.facing = dir.x.atan2(dir.z);
+
+                self.bullets_count -= 1;
+                self.minigun_cooldown = 0.07; // Rapid fire auto-turret minigun!
+                let muzzle = self.farmer.position + vec3(0.0, 0.9, 0.0) + dir * 0.6;
+                self.minigun_bullets.push(MinigunBullet {
+                    position: muzzle,
+                    velocity: dir * 60.0,
+                    life: 1.0,
+                });
+            } else if manual_fire {
+                self.bullets_count -= 1;
+                self.minigun_cooldown = 0.07;
+                let dir = vec3(self.farmer.facing.sin(), 0.0, self.farmer.facing.cos()).normalize();
+                let muzzle = self.farmer.position + vec3(0.0, 0.9, 0.0) + dir * 0.6;
+                self.minigun_bullets.push(MinigunBullet {
+                    position: muzzle,
+                    velocity: dir * 60.0,
+                    life: 1.0,
+                });
+            }
+        }
+
+        // Update Minigun Bullets & Damage Handling
+        for bullet in self.minigun_bullets.iter_mut() {
+            bullet.position += bullet.velocity * dt;
+            bullet.life -= dt;
+
+            // Damage Rebels
+            for rebel in self.rebels.iter_mut() {
+                if rebel.alive && bullet.position.distance(rebel.position + vec3(0.0, 0.6, 0.0)) < 1.2 {
+                    rebel.hp -= 3.0;
+                    if rebel.hp <= 0.0 {
+                        rebel.alive = false;
+                    }
+                    bullet.life = 0.0;
+                    break;
+                }
+            }
+
+            // Damage Gunboats
+            if bullet.life > 0.0 {
+                for boat in self.gunboats.iter_mut() {
+                    if boat.alive && bullet.position.distance(boat.position + vec3(0.0, 0.8, 0.0)) < 2.5 {
+                        boat.hp -= 2.5;
+                        if boat.hp <= 0.0 {
+                            boat.alive = false;
+                        }
+                        bullet.life = 0.0;
+                        break;
+                    }
+                }
+            }
+
+            // Damage Thief Children
+            if bullet.life > 0.0 {
+                for child in self.children.iter_mut() {
+                    if child.alive && bullet.position.distance(child.position + vec3(0.0, 0.6, 0.0)) < 1.0 {
+                        child.hp -= 2.0;
+                        if child.hp <= 0.0 {
+                            child.alive = false;
+                        }
+                        bullet.life = 0.0;
+                        break;
+                    }
+                }
+            }
+        }
+        self.minigun_bullets.retain(|b| b.life > 0.0);
+
+        // Ground Loot Pickup (Player walks over dropped loot)
+        let f_pos = self.farmer.position;
+        let mut picked_msg = None;
+        for loot in self.dropped_loot.iter_mut() {
+            if loot.amount > 0 && f_pos.distance(loot.position) < 1.6 {
+                match loot.loot_type {
+                    LootType::BloodDiamonds => {
+                        let already_had = self.has_unlocked_blood_diamonds;
+                        self.blood_diamonds += loot.amount;
+                        self.has_unlocked_blood_diamonds = true;
+                        if already_had {
+                            picked_msg = Some(format!("Picked up {} Blood Diamonds! (Converted to currency, already unlocked!)", loot.amount));
+                        } else {
+                            picked_msg = Some(format!("UNLOCKED NEW CURRENCY: {} Blood Diamonds!", loot.amount));
+                        }
+                    }
+                    LootType::Cash => {
+                        let already_had = self.has_unlocked_cash;
+                        self.cash += loot.amount * 500;
+                        self.has_unlocked_cash = true;
+                        if already_had {
+                            picked_msg = Some(format!("Picked up ${} Cash! (Converted to currency, already unlocked!)", loot.amount * 500));
+                        } else {
+                            picked_msg = Some(format!("UNLOCKED NEW CURRENCY: ${} Cash Money!", loot.amount * 500));
+                        }
+                    }
+                    LootType::PantherStatue => {
+                        let already_had = self.has_unlocked_panther_statue;
+                        self.panther_statues += loot.amount;
+                        self.has_unlocked_panther_statue = true;
+                        if already_had {
+                            picked_msg = Some(format!("Picked up {} Panther Statue! (Converted to currency, already unlocked!)", loot.amount));
+                        } else {
+                            picked_msg = Some(format!("UNLOCKED NEW CURRENCY: {} Panther Statue!", loot.amount));
+                        }
+                    }
+                    LootType::Gold => {
+                        let already_had = self.has_unlocked_gold;
+                        self.gold += loot.amount * 10;
+                        self.has_unlocked_gold = true;
+                        if already_had {
+                            picked_msg = Some(format!("Picked up {} Gold Bars! (Converted to currency, already unlocked!)", loot.amount * 10));
+                        } else {
+                            picked_msg = Some(format!("UNLOCKED NEW CURRENCY: {} Gold Bars!", loot.amount * 10));
+                        }
+                    }
+                    LootType::Bullets => {
+                        let already_had = self.has_unlocked_bullets;
+                        self.bullets_count += loot.amount * 50;
+                        self.has_unlocked_bullets = true;
+                        if already_had {
+                            picked_msg = Some(format!("Picked up {} Bullets! (Converted to currency/ammo, already unlocked!)", loot.amount * 50));
+                        } else {
+                            picked_msg = Some(format!("UNLOCKED NEW ITEM: {} Minigun Bullets!", loot.amount * 50));
+                        }
+                    }
+                    LootType::Minigun => {
+                        let already_had = self.has_unlocked_minigun;
+                        self.minigun_unlocked = true;
+                        self.has_unlocked_minigun = true;
+                        self.bullets_count += 200;
+                        self.has_unlocked_bullets = true;
+                        if already_had {
+                            picked_msg = Some("Picked up duplicate Minigun! (Converted to currency: +200 Minigun Bullets!)".to_string());
+                        } else {
+                            picked_msg = Some("UNLOCKED THE HEAVY MINIGUN! Press [F] or LMB to Shoot!".to_string());
+                        }
+                    }
+                }
+                loot.amount = 0;
+            }
+        }
+        if let Some(msg) = picked_msg {
+            self.set_msg(&msg);
+            self.save_game();
+        }
+        self.dropped_loot.retain(|l| l.amount > 0);
+
+        // Update Crashing B2 Stealth Bombers (Falling, rotating, exploding on ground impact)
+        let mut crashed_impacts = Vec::new();
+        for bomber in self.crashing_bombers.iter_mut() {
+            bomber.velocity.y -= 18.0 * dt; // Gravity pull
+            bomber.position += bomber.velocity * dt;
+            bomber.rotation += bomber.rot_speed * dt;
+            bomber.life -= dt;
+
+            // Check ground impact (y <= 0.2)
+            if bomber.position.y <= 0.2 && bomber.life > 0.0 {
+                bomber.life = 0.0;
+                crashed_impacts.push(vec3(bomber.position.x, 0.1, bomber.position.z));
+            }
+        }
+        self.crashing_bombers.retain(|b| b.life > 0.0);
+
+        for impact_pos in crashed_impacts {
+            self.spawn_sparkles(impact_pos);
+
+            // Select 1 single random loot item per B-2 Bomber shot down
+            let items = [
+                LootType::BloodDiamonds,
+                LootType::Cash,
+                LootType::PantherStatue,
+                LootType::Gold,
+                LootType::Bullets,
+                LootType::Minigun,
+            ];
+            let selected_loot = items[rand::gen_range(0, items.len())];
+
+            self.dropped_loot.push(DroppedLoot {
+                loot_type: selected_loot,
+                position: impact_pos,
+                amount: 1,
+            });
+            self.set_msg("B2 BOMBER CRASHED! Secret Loot dropped on farm ground!");
+        }
+
         // --- ISRAELI IRON DOME BATTERY SYSTEM ---
         for dome in self.iron_domes.iter_mut() {
             dome.cooldown = (dome.cooldown - dt).max(0.0);
@@ -948,7 +1468,8 @@ impl Game {
                 let target = self.air_event.bomber_pos;
                 let dome_pos = dome.position + vec3(0.0, 1.5, 0.0);
 
-                if dome_pos.distance(target) < 140.0 {
+                // Only shoot down B-2 Bomber when it is strictly over/after the river and on the farm field (-26.0 <= target.x <= 15.0)
+                if target.x >= -26.0 && target.x <= 15.0 && dome_pos.distance(target) < 140.0 {
                     self.iron_dome_missiles.push(IronDomeMissile {
                         position: dome_pos,
                         target_pos: target,
@@ -960,23 +1481,37 @@ impl Game {
             }
         }
 
-        // Update Iron Dome Missiles
-        let mut intercept_pos = None;
+        // Update Iron Dome Missiles & Intercepting B2 Bomber
+        let mut intercept_data = None;
         for missile in self.iron_dome_missiles.iter_mut() {
             let dir = (missile.target_pos - missile.position).normalize();
             missile.position += dir * (missile.speed * dt);
             missile.life -= dt;
 
-            // Intercept check
-            if missile.position.distance(self.air_event.bomber_pos) < 4.0 {
-                intercept_pos = Some(missile.position);
+            // Intercept check against active B2 bomber
+            if self.air_event.active && missile.position.distance(self.air_event.bomber_pos) < 5.0 {
+                intercept_data = Some(self.air_event.bomber_pos);
                 missile.life = 0.0;
             }
         }
-        if let Some(pos) = intercept_pos {
-            self.air_event.active = false; // Intercepted and destroyed!
+        if let Some(pos) = intercept_data {
+            self.air_event.active = false; // Intercepted!
             self.spawn_sparkles(pos);
-            self.set_msg("IRON DOME INTERCEPTED ENEMY B-2 BOMBER!");
+            
+            // Clamp crash landing target safely within open farm field bounds (avoiding river & surrounding houses)
+            let safe_x = pos.x.clamp(-20.0, 18.0);
+            let safe_z = pos.z.clamp(-15.0, 15.0);
+
+            // Trigger B2 Bomber crash trajectory landing safely on open farm ground!
+            self.crashing_bombers.push(CrashingBomber {
+                position: vec3(safe_x, pos.y, safe_z),
+                velocity: vec3(0.0, -14.0, 0.0),
+                rotation: 0.0,
+                rot_speed: rand::gen_range(3.0, 8.0),
+                life: 2.0,
+            });
+
+            self.set_msg("IRON DOME SHOT DOWN B-2 BOMBER! It is crashing onto the farm ground!");
         }
         self.iron_dome_missiles.retain(|m| m.life > 0.0);
 

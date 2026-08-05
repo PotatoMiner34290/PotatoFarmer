@@ -329,11 +329,14 @@ pub fn draw_gunboats(game: &Game) {
     }
 }
 
-// Draw Armed Disembarked African Rebels
+// Draw Armed Disembarked African Rebels & AK-47 Bullets
 pub fn draw_rebels(game: &Game) {
     let skin_tone = Color::from_rgba(85, 50, 25, 255);
-    let camo_green = Color::from_rgba(50, 80, 45, 255);
+    let camo_green = Color::from_rgba(45, 75, 40, 255);
+    let vest_brown = Color::from_rgba(110, 65, 35, 255);
     let beret_red = Color::from_rgba(190, 40, 30, 255);
+    let ak_wood = Color::from_rgba(140, 75, 30, 255);
+    let ak_steel = Color::from_rgba(30, 30, 35, 255);
 
     for rebel in &game.rebels {
         if !rebel.alive {
@@ -349,23 +352,54 @@ pub fn draw_rebels(game: &Game) {
         let forward = vec3(facing.sin(), 0.0, facing.cos());
         let right = vec3(forward.z, 0.0, -forward.x);
 
-        // Legs
+        // Legs (Camo cargo pants)
         draw_cylinder(pos + right * 0.1 + forward * leg_swing + vec3(0.0, 0.35, 0.0), 0.08, 0.08, 0.7, None, camo_green);
         draw_cylinder(pos - right * 0.1 - forward * leg_swing + vec3(0.0, 0.35, 0.0), 0.08, 0.08, 0.7, None, camo_green);
 
-        // Torso
+        // Combat Boots
+        draw_cube(pos + right * 0.1 + forward * leg_swing + forward * 0.05 + vec3(0.0, 0.05, 0.0), vec3(0.12, 0.1, 0.22), None, BLACK);
+        draw_cube(pos - right * 0.1 - forward * leg_swing + forward * 0.05 + vec3(0.0, 0.05, 0.0), vec3(0.12, 0.1, 0.22), None, BLACK);
+
+        // Torso & Tactical Ammo Vest (African Gun Runner aesthetic)
         let torso_pos = pos + vec3(0.0, 1.05, 0.0);
         draw_cylinder(torso_pos, 0.24, 0.22, 0.75, None, camo_green);
+        draw_cube(torso_pos + forward * 0.1, vec3(0.38, 0.6, 0.2), None, vest_brown);
+        // Ammo Magazine Pouches
+        draw_cube(torso_pos + forward * 0.22 + right * 0.08 - vec3(0.0, 0.1, 0.0), vec3(0.1, 0.2, 0.1), None, DARKGREEN);
+        draw_cube(torso_pos + forward * 0.22 - right * 0.08 - vec3(0.0, 0.1, 0.0), vec3(0.1, 0.2, 0.1), None, DARKGREEN);
 
         // Head & Red Beret
         let head_pos = torso_pos + vec3(0.0, 0.55, 0.0);
         draw_sphere(head_pos, 0.24, None, skin_tone);
         draw_cylinder(head_pos + vec3(0.0, 0.12, 0.0), 0.3, 0.3, 0.08, None, beret_red);
 
-        // AK-47 Assault Rifle in hands
-        let gun_pos = torso_pos + forward * 0.35 - vec3(0.0, 0.1, 0.0);
-        draw_cube(gun_pos, vec3(0.1, 0.1, 0.7), None, Color::from_rgba(110, 70, 40, 255));
-        draw_cylinder(gun_pos + forward * 0.3, 0.03, 0.03, 0.4, None, BLACK);
+        // AK-47 Assault Rifle with curved banana magazine & wooden stock
+        let gun_pos = torso_pos + forward * 0.4 - vec3(0.0, 0.08, 0.0);
+        // Wooden Handguard & Receiver Body
+        draw_cube(gun_pos, vec3(0.08, 0.1, 0.65), None, ak_wood);
+        // Steel Barrel & Sight
+        draw_cylinder(gun_pos + forward * 0.35, 0.025, 0.025, 0.5, None, ak_steel);
+        // Curved Banana Magazine
+        draw_cube(gun_pos - vec3(0.0, 0.14, 0.0) + forward * 0.05, vec3(0.06, 0.22, 0.12), None, ak_steel);
+
+        // Floating 3D Health Bar above African Rebel Head
+        let hp_ratio = (rebel.hp / rebel.max_hp).clamp(0.0, 1.0);
+        let bar_center = head_pos + vec3(0.0, 0.5, 0.0);
+        draw_cube(bar_center, vec3(0.9, 0.12, 0.06), None, BLACK);
+        if hp_ratio > 0.0 {
+            let hp_w = 0.86 * hp_ratio;
+            let hp_color = if hp_ratio > 0.5 { GREEN } else { RED };
+            draw_cube(bar_center + vec3(-0.43 + hp_w / 2.0, 0.0, 0.01), vec3(hp_w, 0.09, 0.06), None, hp_color);
+        }
+    }
+
+    // Render Rebel AK-47 Tracers / Bullets
+    for bullet in &game.rebel_bullets {
+        if !game.camera.is_in_view(bullet.position, 1.0) {
+            continue;
+        }
+        draw_sphere(bullet.position, 0.15, None, ORANGE);
+        draw_line_3d(bullet.position, bullet.position - bullet.velocity * 0.05, YELLOW);
     }
 }
 
@@ -576,6 +610,60 @@ pub fn draw_surrounding_houses(game: &Game) {
     }
 }
 
+pub fn draw_dropped_loot(game: &Game) {
+    let bounce = (get_time() * 3.5).sin() as f32 * 0.15;
+    for loot in &game.dropped_loot {
+        if loot.amount == 0 || !game.camera.is_in_view(loot.position, 2.0) {
+            continue;
+        }
+        let pos = loot.position + vec3(0.0, 0.4 + bounce, 0.0);
+        match loot.loot_type {
+            LootType::BloodDiamonds => {
+                draw_sphere(pos, 0.3, None, RED);
+                draw_sphere(pos, 0.45, None, Color::from_rgba(255, 50, 80, 100));
+            }
+            LootType::Cash => {
+                draw_cube(pos, vec3(0.5, 0.18, 0.3), None, LIME);
+                draw_cube_wires(pos, vec3(0.52, 0.2, 0.32), DARKGREEN);
+            }
+            LootType::PantherStatue => {
+                draw_cylinder(pos - vec3(0.0, 0.15, 0.0), 0.25, 0.25, 0.1, None, BLACK);
+                draw_cube(pos, vec3(0.35, 0.4, 0.25), None, Color::from_rgba(40, 20, 60, 255));
+                draw_sphere(pos + vec3(0.0, 0.25, 0.0), 0.2, None, PURPLE);
+            }
+            LootType::Gold => {
+                draw_cube(pos, vec3(0.45, 0.2, 0.25), None, GOLD);
+                draw_sphere(pos, 0.35, None, Color::from_rgba(255, 215, 0, 120));
+            }
+            LootType::Bullets => {
+                draw_cylinder(pos, 0.12, 0.12, 0.4, None, YELLOW);
+                draw_cube(pos, vec3(0.3, 0.25, 0.3), None, Color::from_rgba(180, 140, 40, 255));
+            }
+            LootType::Minigun => {
+                draw_cylinder(pos, 0.18, 0.18, 0.7, None, DARKGRAY);
+                draw_cube(pos + vec3(0.0, 0.1, 0.0), vec3(0.3, 0.3, 0.5), None, BLACK);
+                draw_sphere(pos, 0.5, None, Color::from_rgba(255, 165, 0, 120));
+            }
+        }
+    }
+}
+
+pub fn draw_crashing_bombers(game: &Game) {
+    let bomber_dark = Color::from_rgba(40, 42, 48, 255);
+    for bomber in &game.crashing_bombers {
+        let bpos = bomber.position;
+        if !game.camera.is_in_view(bpos, 10.0) {
+            continue;
+        }
+        draw_cube(bpos, vec3(3.4, 0.6, 2.2), None, bomber_dark);
+        draw_cube(bpos + vec3(-0.5, 0.0, 4.5), vec3(3.5, 0.35, 7.5), None, bomber_dark);
+        draw_cube(bpos + vec3(-0.5, 0.0, -4.5), vec3(3.5, 0.35, 7.5), None, bomber_dark);
+        // Fire & smoke trail
+        draw_sphere(bpos + vec3(-1.0, 0.2, 0.0), 1.2, None, ORANGE);
+        draw_sphere(bpos + vec3(-2.0, 0.5, 0.0), 1.8, None, Color::from_rgba(80, 80, 80, 200));
+    }
+}
+
 pub fn draw_scene(game: &Game) {
     clear_background(Color::from_rgba(135, 206, 235, 255));
 
@@ -610,12 +698,14 @@ pub fn draw_scene(game: &Game) {
 
     draw_surrounding_houses(game);
 
-    // Draw Iron Domes, Gunboats, Rebels, Defense Turrets and Thief Children
+    // Draw Iron Domes, Gunboats, Rebels, Defense Turrets, Thief Children, Ground Loot and Crashing Bombers
     draw_iron_domes(game);
     draw_gunboats(game);
     draw_rebels(game);
     draw_turrets(game);
     draw_thief_children(game);
+    draw_dropped_loot(game);
+    draw_crashing_bombers(game);
 
     for particle in &game.dirt {
         if !game.camera.is_in_view(particle.position, 1.0) {
@@ -657,26 +747,246 @@ pub fn draw_scene(game: &Game) {
 
     draw_current_tile_marker(game);
     draw_farmer_3d(&game.farmer);
+    draw_ai_slaves(game);
 
     draw_air_event_3d(game);
 
     set_default_camera();
 }
 
+pub fn draw_ai_slaves(game: &Game) {
+    let skin_tone = Color::from_rgba(115, 75, 45, 255);
+    let shirt_c = Color::from_rgba(200, 140, 50, 255);
+    let pants_c = Color::from_rgba(50, 50, 70, 255);
+
+    for slave in &game.ai_slaves {
+        let pos = slave.position;
+        if !game.camera.is_in_view(pos, 2.0) {
+            continue;
+        }
+        let facing = slave.facing;
+        let leg_swing = (slave.anim_timer).sin() * 0.2;
+        let forward = vec3(facing.sin(), 0.0, facing.cos());
+        let right = vec3(forward.z, 0.0, -forward.x);
+
+        // Legs
+        draw_cylinder(pos + right * 0.1 + forward * leg_swing + vec3(0.0, 0.35, 0.0), 0.08, 0.08, 0.7, None, pants_c);
+        draw_cylinder(pos - right * 0.1 - forward * leg_swing + vec3(0.0, 0.35, 0.0), 0.08, 0.08, 0.7, None, pants_c);
+
+        // Torso
+        let torso_pos = pos + vec3(0.0, 1.05, 0.0);
+        draw_cylinder(torso_pos, 0.22, 0.2, 0.75, None, shirt_c);
+
+        // Head
+        let head_pos = torso_pos + vec3(0.0, 0.55, 0.0);
+        draw_sphere(head_pos, 0.22, None, skin_tone);
+
+        // Farm Worker Straw Hat
+        draw_cylinder(head_pos + vec3(0.0, 0.1, 0.0), 0.45, 0.45, 0.05, None, GOLD);
+
+        // Label above head
+        let bar_center = head_pos + vec3(0.0, 0.4, 0.0);
+        draw_cube(bar_center, vec3(0.8, 0.1, 0.05), None, DARKGRAY);
+    }
+}
+
 pub fn draw_hud(game: &Game) {
+    if game.menu_open {
+        let pad_x = 40.0;
+        let pad_y = 30.0;
+        let menu_w = screen_width() - pad_x * 2.0;
+        let menu_h = screen_height() - pad_y * 2.0;
+
+        draw_rectangle(pad_x, pad_y, menu_w, menu_h, Color::from_rgba(15, 20, 28, 235));
+        draw_rectangle_lines(pad_x, pad_y, menu_w, menu_h, 3.0, GOLD);
+
+        let center_x = screen_width() / 2.0;
+        let start_y = pad_y + 50.0;
+
+        draw_text("=== INVENTORY & CURRENCY MENU ===", center_x - 210.0, start_y, 24.0, GOLD);
+
+        // Core Resources Row
+        let mut cur_y = start_y + 40.0;
+        draw_text("CORE RESOURCES:", pad_x + 30.0, cur_y, 20.0, SKYBLUE);
+        cur_y += 30.0;
+
+        // Draw Seeds Icon & Count
+        draw_circle(pad_x + 45.0, cur_y - 6.0, 10.0, GREEN);
+        draw_text(&format!("Seeds: {}", game.seeds), pad_x + 65.0, cur_y, 18.0, WHITE);
+
+        // Draw Potatoes Icon & Count
+        draw_sphere(vec3(0.0, 0.0, 0.0), 0.0, None, WHITE); // dummy
+        draw_circle(pad_x + 220.0, cur_y - 6.0, 10.0, Color::from_rgba(180, 130, 70, 255));
+        draw_text(&format!("Potatoes: {}", game.potatoes), pad_x + 240.0, cur_y, 18.0, WHITE);
+
+        // Draw Turrets Inventory
+        draw_rectangle(pad_x + 420.0, cur_y - 14.0, 18.0, 18.0, DARKGRAY);
+        draw_text(&format!("Turrets: {}", game.turrets_in_inventory), pad_x + 445.0, cur_y, 18.0, WHITE);
+
+        // Draw Iron Domes Inventory
+        draw_rectangle(pad_x + 600.0, cur_y - 14.0, 18.0, 18.0, LIGHTGRAY);
+        draw_text(&format!("Iron Domes: {}", game.iron_domes_in_inventory), pad_x + 625.0, cur_y, 18.0, WHITE);
+
+        cur_y += 45.0;
+        draw_line(pad_x + 20.0, cur_y - 15.0, pad_x + menu_w - 20.0, cur_y - 15.0, 2.0, GRAY);
+
+        // UNLOCKED B-2 BOMBER CURRENCIES & WEAPONS (Only shown after shot down & picked up!)
+        draw_text("SPECIAL LOOT & UNLOCKED CURRENCIES (Shot down from B-2 Bomber):", pad_x + 30.0, cur_y, 20.0, GOLD);
+        cur_y += 35.0;
+
+        let icon_box_size = 50.0;
+        let mut slot_x = pad_x + 30.0;
+
+        // Slot 1: Blood Diamonds
+        if game.has_unlocked_blood_diamonds {
+            draw_rectangle(slot_x, cur_y, icon_box_size, icon_box_size, Color::from_rgba(30, 40, 50, 255));
+            draw_rectangle_lines(slot_x, cur_y, icon_box_size, icon_box_size, 2.0, RED);
+            // Blood Diamond Icon
+            draw_poly(slot_x + 25.0, cur_y + 25.0, 4, 14.0, 45.0, RED);
+            draw_text(&format!("x{}", game.blood_diamonds), slot_x + 5.0, cur_y + 65.0, 16.0, RED);
+            draw_text("Blood Diamonds", slot_x - 10.0, cur_y + 82.0, 14.0, LIGHTGRAY);
+        } else {
+            draw_rectangle(slot_x, cur_y, icon_box_size, icon_box_size, Color::from_rgba(20, 20, 20, 200));
+            draw_rectangle_lines(slot_x, cur_y, icon_box_size, icon_box_size, 1.5, DARKGRAY);
+            draw_text("?", slot_x + 18.0, cur_y + 35.0, 24.0, GRAY);
+            draw_text("Locked", slot_x + 4.0, cur_y + 65.0, 14.0, DARKGRAY);
+        }
+        slot_x += 115.0;
+
+        // Slot 2: Cash
+        if game.has_unlocked_cash {
+            draw_rectangle(slot_x, cur_y, icon_box_size, icon_box_size, Color::from_rgba(30, 40, 50, 255));
+            draw_rectangle_lines(slot_x, cur_y, icon_box_size, icon_box_size, 2.0, GREEN);
+            // Cash Dollar Icon
+            draw_rectangle(slot_x + 10.0, cur_y + 14.0, 30.0, 22.0, GREEN);
+            draw_text("$", slot_x + 20.0, cur_y + 32.0, 18.0, WHITE);
+            draw_text(&format!("${}", game.cash), slot_x + 2.0, cur_y + 65.0, 16.0, GREEN);
+            draw_text("Cash Money", slot_x + 2.0, cur_y + 82.0, 14.0, LIGHTGRAY);
+        } else {
+            draw_rectangle(slot_x, cur_y, icon_box_size, icon_box_size, Color::from_rgba(20, 20, 20, 200));
+            draw_rectangle_lines(slot_x, cur_y, icon_box_size, icon_box_size, 1.5, DARKGRAY);
+            draw_text("?", slot_x + 18.0, cur_y + 35.0, 24.0, GRAY);
+            draw_text("Locked", slot_x + 4.0, cur_y + 65.0, 14.0, DARKGRAY);
+        }
+        slot_x += 115.0;
+
+        // Slot 3: Panther Statue
+        if game.has_unlocked_panther_statue {
+            draw_rectangle(slot_x, cur_y, icon_box_size, icon_box_size, Color::from_rgba(30, 40, 50, 255));
+            draw_rectangle_lines(slot_x, cur_y, icon_box_size, icon_box_size, 2.0, PURPLE);
+            // Panther Statue Icon
+            draw_circle(slot_x + 25.0, cur_y + 25.0, 14.0, PURPLE);
+            draw_circle(slot_x + 25.0, cur_y + 25.0, 8.0, BLACK);
+            draw_text(&format!("x{}", game.panther_statues), slot_x + 10.0, cur_y + 65.0, 16.0, PURPLE);
+            draw_text("Panther Statue", slot_x - 8.0, cur_y + 82.0, 14.0, LIGHTGRAY);
+        } else {
+            draw_rectangle(slot_x, cur_y, icon_box_size, icon_box_size, Color::from_rgba(20, 20, 20, 200));
+            draw_rectangle_lines(slot_x, cur_y, icon_box_size, icon_box_size, 1.5, DARKGRAY);
+            draw_text("?", slot_x + 18.0, cur_y + 35.0, 24.0, GRAY);
+            draw_text("Locked", slot_x + 4.0, cur_y + 65.0, 14.0, DARKGRAY);
+        }
+        slot_x += 115.0;
+
+        // Slot 4: Gold Bars
+        if game.has_unlocked_gold {
+            draw_rectangle(slot_x, cur_y, icon_box_size, icon_box_size, Color::from_rgba(30, 40, 50, 255));
+            draw_rectangle_lines(slot_x, cur_y, icon_box_size, icon_box_size, 2.0, GOLD);
+            // Gold Bar Icon
+            draw_rectangle(slot_x + 12.0, cur_y + 15.0, 26.0, 20.0, GOLD);
+            draw_text(&format!("x{}", game.gold), slot_x + 10.0, cur_y + 65.0, 16.0, GOLD);
+            draw_text("Gold Bars", slot_x + 2.0, cur_y + 82.0, 14.0, LIGHTGRAY);
+        } else {
+            draw_rectangle(slot_x, cur_y, icon_box_size, icon_box_size, Color::from_rgba(20, 20, 20, 200));
+            draw_rectangle_lines(slot_x, cur_y, icon_box_size, icon_box_size, 1.5, DARKGRAY);
+            draw_text("?", slot_x + 18.0, cur_y + 35.0, 24.0, GRAY);
+            draw_text("Locked", slot_x + 4.0, cur_y + 65.0, 14.0, DARKGRAY);
+        }
+        slot_x += 115.0;
+
+        // Slot 5: Bullets
+        if game.has_unlocked_bullets {
+            draw_rectangle(slot_x, cur_y, icon_box_size, icon_box_size, Color::from_rgba(30, 40, 50, 255));
+            draw_rectangle_lines(slot_x, cur_y, icon_box_size, icon_box_size, 2.0, YELLOW);
+            // Bullet Icon
+            draw_rectangle(slot_x + 20.0, cur_y + 12.0, 10.0, 26.0, YELLOW);
+            draw_text(&format!("x{}", game.bullets_count), slot_x + 2.0, cur_y + 65.0, 16.0, YELLOW);
+            draw_text("Ammo Bullets", slot_x - 5.0, cur_y + 82.0, 14.0, LIGHTGRAY);
+        } else {
+            draw_rectangle(slot_x, cur_y, icon_box_size, icon_box_size, Color::from_rgba(20, 20, 20, 200));
+            draw_rectangle_lines(slot_x, cur_y, icon_box_size, icon_box_size, 1.5, DARKGRAY);
+            draw_text("?", slot_x + 18.0, cur_y + 35.0, 24.0, GRAY);
+            draw_text("Locked", slot_x + 4.0, cur_y + 65.0, 14.0, DARKGRAY);
+        }
+        slot_x += 115.0;
+
+        // Slot 6: Heavy Minigun
+        if game.has_unlocked_minigun {
+            draw_rectangle(slot_x, cur_y, icon_box_size, icon_box_size, Color::from_rgba(30, 40, 50, 255));
+            draw_rectangle_lines(slot_x, cur_y, icon_box_size, icon_box_size, 2.0, ORANGE);
+            // Minigun Icon
+            draw_rectangle(slot_x + 10.0, cur_y + 18.0, 30.0, 14.0, DARKGRAY);
+            draw_circle(slot_x + 35.0, cur_y + 25.0, 6.0, ORANGE);
+            draw_text("READY", slot_x + 2.0, cur_y + 65.0, 16.0, ORANGE);
+            draw_text("Minigun [Auto/F]", slot_x - 10.0, cur_y + 82.0, 14.0, LIGHTGRAY);
+        } else {
+            draw_rectangle(slot_x, cur_y, icon_box_size, icon_box_size, Color::from_rgba(20, 20, 20, 200));
+            draw_rectangle_lines(slot_x, cur_y, icon_box_size, icon_box_size, 1.5, DARKGRAY);
+            draw_text("?", slot_x + 18.0, cur_y + 35.0, 24.0, GRAY);
+            draw_text("Locked", slot_x + 4.0, cur_y + 65.0, 14.0, DARKGRAY);
+        }
+
+        cur_y += 120.0;
+        draw_line(pad_x + 20.0, cur_y - 15.0, pad_x + menu_w - 20.0, cur_y - 15.0, 2.0, GRAY);
+
+        if game.game_over {
+            draw_text("STATUS: DIED (PERMANENT FAILURE)", pad_x + 30.0, cur_y + 10.0, 22.0, RED);
+            draw_text("Press [Y] -> Restart savegame to play again", pad_x + 30.0, cur_y + 40.0, 20.0, YELLOW);
+        } else {
+            draw_text(&format!("STATUS: ALIVE ({}/100 HP)", game.farmer.hp as u32), pad_x + 30.0, cur_y + 10.0, 20.0, GREEN);
+            draw_text("Controls: [TAB] / [ESC] / [V] - Toggle Menu | Minigun Auto-Fires at Threats!", pad_x + 30.0, cur_y + 40.0, 18.0, LIGHTGRAY);
+            draw_text("Press [Y] -> Reset & Restart savegame", pad_x + 30.0, cur_y + 65.0, 16.0, YELLOW);
+        }
+        return;
+    }
+
+    if game.game_over {
+        // Red Game Over Banner prompting ESC menu
+        let go_w = 600.0;
+        let go_h = 140.0;
+        let go_x = screen_width() / 2.0 - go_w / 2.0;
+        let go_y = screen_height() / 2.0 - go_h / 2.0;
+        draw_rectangle(go_x, go_y, go_w, go_h, Color::from_rgba(35, 10, 10, 240));
+        draw_rectangle_lines(go_x, go_y, go_w, go_h, 3.0, RED);
+
+        draw_text("YOU DIED - PERMANENT FAILURE!", go_x + 60.0, go_y + 45.0, 26.0, RED);
+        draw_text("Press [ESC] to open menu and restart new savegame!", go_x + 35.0, go_y + 90.0, 20.0, GOLD);
+        return;
+    }
+
     draw_rectangle(10.0, 10.0, 620.0, 220.0, Color::from_rgba(20, 25, 30, 200));
     draw_rectangle_lines(10.0, 10.0, 620.0, 220.0, 2.0, GOLD);
 
     draw_text("AFRICAN GUN RUNNER POTATO FARM", 20.0, 34.0, 20.0, GOLD);
     draw_text("WASD / Arrows - Move Grid | SPACE - Plow Rows", 20.0, 60.0, 18.0, WHITE);
-    draw_text("E - Plant/Harvest | [B] Place Turret | [I] Deploy Iron Dome", 20.0, 104.0, 18.0, WHITE);
-    draw_text("F5 / K - Save Game   |   F9 / L - Load Game", 20.0, 126.0, 18.0, SKYBLUE);
+
+    // Player 100 Health Bar
+    draw_text("HEALTH:", 20.0, 84.0, 18.0, WHITE);
+    let hp_ratio = (game.farmer.hp / game.farmer.max_hp).clamp(0.0, 1.0);
+    draw_rectangle(100.0, 72.0, 200.0, 16.0, DARKGRAY);
+    let hp_color = if hp_ratio > 0.5 { GREEN } else if hp_ratio > 0.25 { YELLOW } else { RED };
+    draw_rectangle(100.0, 72.0, 200.0 * hp_ratio, 16.0, hp_color);
+    draw_rectangle_lines(100.0, 72.0, 200.0, 16.0, 1.5, WHITE);
+    let hp_str = format!("{}/100", game.farmer.hp as u32);
+    draw_text(&hp_str, 310.0, 85.0, 16.0, hp_color);
+
+    draw_text("E - Plant/Harvest | [B] Place Turret | [I] Deploy Iron Dome", 20.0, 114.0, 18.0, WHITE);
+    draw_text("F5 / K - Save Game   |   F9 / L - Load Game", 20.0, 136.0, 18.0, SKYBLUE);
 
     let inv_text = format!(
-        "Seeds: {}  Potatoes: {}  Turrets: {}  IronDomes: {}",
-        game.seeds, game.potatoes, game.turrets_in_inventory, game.iron_domes_in_inventory
+        "Seeds: {}  Potatoes: {}  Slaves: {}  Turrets: {}  IronDomes: {}",
+        game.seeds, game.potatoes, game.ai_slaves.len(), game.turrets_in_inventory, game.iron_domes_in_inventory
     );
-    draw_text(&inv_text, 20.0, 158.0, 20.0, YELLOW);
+    draw_text(&inv_text, 20.0, 168.0, 20.0, YELLOW);
 
     let is_in_field = game.farmer.grid_x >= 0 && game.farmer.grid_x < GRID as i32 &&
                      game.farmer.grid_z >= 0 && game.farmer.grid_z < GRID as i32;
@@ -703,29 +1013,28 @@ pub fn draw_hud(game: &Game) {
         draw_text("Exploring Village / River Area", 20.0, 188.0, 18.0, LIGHTGRAY);
     }
 
-    // ENHANCED MARKET SHOP & TYCOON UPGRADE HUD BANNER
+    // DEDICATED MARKET SHOP & TYCOON UPGRADE GUI OVERLAY
     if game.near_market() {
-        let box_w = 720.0;
+        let box_w = 740.0;
+        let box_h = if game.market_menu_open { 210.0 } else { 80.0 };
         let box_x = screen_width() / 2.0 - box_w / 2.0;
-        let box_y = screen_height() - 95.0;
-        draw_rectangle(box_x, box_y, box_w, 80.0, Color::from_rgba(20, 35, 15, 240));
-        draw_rectangle_lines(box_x, box_y, box_w, 80.0, 2.0, GOLD);
+        let box_y = screen_height() - box_h - 15.0;
+        draw_rectangle(box_x, box_y, box_w, box_h, Color::from_rgba(15, 28, 18, 245));
+        draw_rectangle_lines(box_x, box_y, box_w, box_h, 2.5, GOLD);
 
-        draw_text(
-            "=== MARKET SHOP ENTERED ===",
-            box_x + 20.0,
-            box_y + 24.0,
-            20.0,
-            GOLD,
-        );
-        let shop_text = format!("[E] Trade Seeds | [T] Buy Turret ({} Pot) | [Y] Buy Iron Dome ({} Pot)", TURRET_COST, IRON_DOME_COST);
-        draw_text(
-            &shop_text,
-            box_x + 20.0,
-            box_y + 54.0,
-            18.0,
-            WHITE,
-        );
+        if !game.market_menu_open {
+            draw_text("=== MARKET SHOP ENTERED ===", box_x + 20.0, box_y + 28.0, 20.0, GOLD);
+            draw_text("Press [M] or [E] to Open Full Dedicated Market & Worker Menu!", box_x + 20.0, box_y + 58.0, 18.0, WHITE);
+        } else {
+            draw_text("=== DEDICATED MARKET & REVOLUTIONARY WORKER SHOP ===", box_x + 20.0, box_y + 26.0, 20.0, GOLD);
+            let slave_mode_label = if game.ai_slave_mode == 0 { "Plant & Harvest" } else { "Plant Only" };
+            
+            draw_text("[1] Sell Panther Statues ($2,500) | [2] Sell Blood Diamonds ($1,500) | [3] Sell Gold ($200)", box_x + 20.0, box_y + 55.0, 16.0, WHITE);
+            draw_text("[4] Trade Potatoes->Seeds | [5] Buy AI Worker Slave (150 Pot / $500 Cash)", box_x + 20.0, box_y + 85.0, 16.0, SKYBLUE);
+            draw_text(&format!("[6] Toggle AI Mode: Current [{}] | [7] Buy +100 Minigun Bullets ($300)", slave_mode_label), box_x + 20.0, box_y + 115.0, 16.0, YELLOW);
+            draw_text(&format!("[T] Buy Defense Turret ({} Pot) | [Y] Buy Iron Dome ({} Pot)", TURRET_COST, IRON_DOME_COST), box_x + 20.0, box_y + 145.0, 16.0, GREEN);
+            draw_text(&format!("Cash Balance: ${}  |  AI Slaves Hired: {}", game.cash, game.ai_slaves.len()), box_x + 20.0, box_y + 180.0, 18.0, GOLD);
+        }
     }
 
     if game.msg_timer > 0.0 {

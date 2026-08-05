@@ -72,7 +72,37 @@ impl From<CellStateSave> for CellState {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Debug)]
+pub enum LootType {
+    BloodDiamonds,
+    Cash,
+    PantherStatue,
+    Gold,
+    Bullets,
+    Minigun,
+}
+
+pub struct DroppedLoot {
+    pub loot_type: LootType,
+    pub position: Vec3,
+    pub amount: u32,
+}
+
+pub struct CrashingBomber {
+    pub position: Vec3,
+    pub velocity: Vec3,
+    pub rotation: f32,
+    pub rot_speed: f32,
+    pub life: f32,
+}
+
+pub struct MinigunBullet {
+    pub position: Vec3,
+    pub velocity: Vec3,
+    pub life: f32,
+}
+
+#[derive(Serialize, Deserialize, Default)]
 pub struct SaveData {
     pub seeds: u32,
     pub potatoes: u32,
@@ -88,6 +118,34 @@ pub struct SaveData {
     pub iron_dome_positions: Vec<(f32, f32, f32)>,
     #[serde(default)]
     pub iron_domes_in_inventory: u32,
+    #[serde(default)]
+    pub blood_diamonds: u32,
+    #[serde(default)]
+    pub cash: u32,
+    #[serde(default)]
+    pub panther_statues: u32,
+    #[serde(default)]
+    pub gold: u32,
+    #[serde(default)]
+    pub bullets_count: u32,
+    #[serde(default)]
+    pub minigun_unlocked: bool,
+    #[serde(default)]
+    pub has_unlocked_blood_diamonds: bool,
+    #[serde(default)]
+    pub has_unlocked_cash: bool,
+    #[serde(default)]
+    pub has_unlocked_panther_statue: bool,
+    #[serde(default)]
+    pub has_unlocked_gold: bool,
+    #[serde(default)]
+    pub has_unlocked_bullets: bool,
+    #[serde(default)]
+    pub has_unlocked_minigun: bool,
+    #[serde(default)]
+    pub ai_slaves_count: u32,
+    #[serde(default)]
+    pub ai_slave_mode: u8, // 0 = Plant & Harvest, 1 = Plant Only
 }
 
 pub struct DirtParticle {
@@ -146,6 +204,12 @@ pub struct GunBoat {
     pub alive: bool,
 }
 
+pub struct RebelBullet {
+    pub position: Vec3,
+    pub velocity: Vec3,
+    pub life: f32,
+}
+
 pub struct Rebel {
     pub position: Vec3,
     pub target_cell: Option<(usize, usize)>,
@@ -156,6 +220,7 @@ pub struct Rebel {
     pub facing: f32,
     pub anim_timer: f32,
     pub raiding_timer: f32,
+    pub shoot_cooldown: f32,
 }
 
 pub struct AirEvent {
@@ -187,6 +252,14 @@ pub struct Turret {
     pub fire_cooldown: f32,
 }
 
+pub struct AiSlave {
+    pub position: Vec3,
+    pub target_cell: Option<(usize, usize)>,
+    pub action_timer: f32,
+    pub anim_timer: f32,
+    pub facing: f32,
+}
+
 pub struct Farmer {
     pub grid_x: i32,
     pub grid_z: i32,
@@ -194,6 +267,8 @@ pub struct Farmer {
     pub facing: f32,
     pub plowing: bool,
     pub step_cooldown: f32,
+    pub hp: f32,
+    pub max_hp: f32,
 }
 
 pub struct CameraState {
