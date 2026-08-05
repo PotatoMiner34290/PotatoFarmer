@@ -84,6 +84,10 @@ pub struct SaveData {
     pub turrets_in_inventory: u32,
     #[serde(default)]
     pub turret_positions: Vec<(f32, f32, f32)>,
+    #[serde(default)]
+    pub iron_dome_positions: Vec<(f32, f32, f32)>,
+    #[serde(default)]
+    pub iron_domes_in_inventory: u32,
 }
 
 pub struct DirtParticle {
@@ -101,10 +105,57 @@ pub struct SparkleParticle {
     pub color: Color,
 }
 
+pub const IRON_DOME_COST: u32 = 120;
+
+use macroquad::audio::Sound;
+
+pub struct SoundEffects {
+    pub turret_fire: Option<Sound>,
+    pub jet_flyby: Option<Sound>,
+    pub jet_shoot: Option<Sound>,
+    pub iron_dome_intercept: Option<Sound>,
+    pub boat_engine: Option<Sound>,
+    pub thief_giggle: Option<Sound>,
+}
+
 pub struct BulletParticle {
     pub position: Vec3,
     pub velocity: Vec3,
     pub life: f32,
+}
+
+pub struct IronDomeMissile {
+    pub position: Vec3,
+    pub target_pos: Vec3,
+    pub speed: f32,
+    pub life: f32,
+}
+
+pub struct IronDome {
+    pub position: Vec3,
+    pub cooldown: f32,
+}
+
+pub struct GunBoat {
+    pub position: Vec3,
+    pub target_z: f32,
+    pub hp: f32,
+    pub max_hp: f32,
+    pub disembarked: bool,
+    pub disembark_timer: f32,
+    pub alive: bool,
+}
+
+pub struct Rebel {
+    pub position: Vec3,
+    pub target_cell: Option<(usize, usize)>,
+    pub speed: f32,
+    pub hp: f32,
+    pub max_hp: f32,
+    pub alive: bool,
+    pub facing: f32,
+    pub anim_timer: f32,
+    pub raiding_timer: f32,
 }
 
 pub struct AirEvent {
@@ -128,6 +179,7 @@ pub struct ThiefChild {
     pub harvesting_timer: f32,
     pub hp: f32,
     pub max_hp: f32,
+    pub has_stolen: bool,
 }
 
 pub struct Turret {

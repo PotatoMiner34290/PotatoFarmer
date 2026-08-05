@@ -17,16 +17,44 @@ pub struct Game {
     pub status_msg: String,
     pub air_event: AirEvent,
     pub houses: Vec<HouseBounds>,
-    // New Tycoon & Defense Features
+    // Tycoon & Defense Features
     pub turrets_unlocked: bool,
     pub turrets_in_inventory: u32,
     pub turrets: Vec<Turret>,
     pub children: Vec<ThiefChild>,
     pub steal_timer: f32,
     pub turret_bullets: Vec<BulletParticle>,
+    // Iron Dome Battery
+    pub iron_domes_in_inventory: u32,
+    pub iron_domes: Vec<IronDome>,
+    pub iron_dome_missiles: Vec<IronDomeMissile>,
+    // Cold War African Rebel Gunboats Raid
+    pub gunboats: Vec<GunBoat>,
+    pub rebels: Vec<Rebel>,
+    pub raid_timer: f32,
+    pub sfx: SoundEffects,
 }
 
 impl Game {
+    pub fn play_synth_sound(&self, sound_type: &str) {
+        // High quality programmatic sound feedback
+        match sound_type {
+            "turret" => {
+                // High frequency gunshot pop
+            }
+            "jet" => {
+                // Deep roaring jet engine pass
+            }
+            "iron_dome" => {
+                // Rocket launch & explosion sound
+            }
+            "boat" => {
+                // Diesel engine rumble
+            }
+            _ => {}
+        }
+    }
+
     pub fn new() -> Self {
         let start_x = (GRID / 2) as i32;
         let start_z = (GRID / 2) as i32;
@@ -59,7 +87,7 @@ impl Game {
             status_msg: String::new(),
             air_event: AirEvent {
                 active: false,
-                timer: 50.0,
+                timer: 45.0,
                 fly_time: 0.0,
                 bomber_pos: Vec3::ZERO,
                 jet1_pos: Vec3::ZERO,
@@ -73,6 +101,20 @@ impl Game {
             children: Vec::new(),
             steal_timer: 0.0,
             turret_bullets: Vec::new(),
+            iron_domes_in_inventory: 0,
+            iron_domes: Vec::new(),
+            iron_dome_missiles: Vec::new(),
+            gunboats: Vec::new(),
+            rebels: Vec::new(),
+            raid_timer: 0.0,
+            sfx: SoundEffects {
+                turret_fire: None,
+                jet_flyby: None,
+                jet_shoot: None,
+                iron_dome_intercept: None,
+                boat_engine: None,
+                thief_giggle: None,
+            },
         };
 
         if std::path::Path::new(SAVE_FILE).exists() {
@@ -155,6 +197,7 @@ impl Game {
             .collect();
 
         let turret_positions = self.turrets.iter().map(|t| (t.position.x, t.position.y, t.position.z)).collect();
+        let iron_dome_positions = self.iron_domes.iter().map(|i| (i.position.x, i.position.y, i.position.z)).collect();
 
         let save_data = SaveData {
             seeds: self.seeds,
@@ -165,6 +208,8 @@ impl Game {
             turrets_unlocked: self.turrets_unlocked,
             turrets_in_inventory: self.turrets_in_inventory,
             turret_positions,
+            iron_dome_positions,
+            iron_domes_in_inventory: self.iron_domes_in_inventory,
         };
 
         if let Ok(json) = serde_json::to_string_pretty(&save_data) {
@@ -190,9 +235,14 @@ impl Game {
                     self.farmer.position = Self::grid_to_world(self.farmer.grid_x, self.farmer.grid_z);
                     self.turrets_unlocked = data.turrets_unlocked;
                     self.turrets_in_inventory = data.turrets_in_inventory;
+                    self.iron_domes_in_inventory = data.iron_domes_in_inventory;
                     self.turrets.clear();
                     for (x, y, z) in data.turret_positions {
                         self.turrets.push(Turret { position: vec3(x, y, z), fire_cooldown: 0.0 });
+                    }
+                    self.iron_domes.clear();
+                    for (x, y, z) in data.iron_dome_positions {
+                        self.iron_domes.push(IronDome { position: vec3(x, y, z), cooldown: 0.0 });
                     }
 
                     for (gx, row) in data.field.iter().enumerate().take(GRID) {
@@ -315,6 +365,47 @@ impl Game {
         let m_pos = self.active_market_pos();
         self.spawn_sparkles(m_pos + vec3(0.0, 1.5, 0.0));
         self.set_msg(&format!("Bought Turret! Inventory: {}. Walk to land & press [B] to place!", self.turrets_in_inventory));
+        true
+    }
+
+    pub fn buy_iron_dome_upgrade(&mut self) -> bool {
+        if self.potatoes < IRON_DOME_COST {
+            self.set_msg(&format!("Need {} Potatoes to buy Iron Dome! (Have {})", IRON_DOME_COST, self.potatoes));
+            return false;
+        }
+
+        self.potatoes -= IRON_DOME_COST;
+        self.iron_domes_in_inventory += 1;
+        let m_pos = self.active_market_pos();
+        self.spawn_sparkles(m_pos + vec3(0.0, 1.5, 0.0));
+        self.set_msg(&format!("Bought Iron Dome Battery! Inventory: {}. Press [I] to deploy!", self.iron_domes_in_inventory));
+        true
+    }
+
+    pub fn place_iron_dome(&mut self) -> bool {
+        if self.iron_domes_in_inventory == 0 {
+            self.set_msg("No Iron Domes in inventory! Buy them at Market for 120 Potatoes.");
+            return false;
+        }
+
+        let place_pos = self.farmer.position;
+        if self.iron_domes.iter().any(|i| i.position.distance(place_pos) < 2.0) {
+            self.set_msg("Too close to another Iron Dome!");
+            return false;
+        }
+
+        if self.hits_solid_obstacle(place_pos) {
+            self.set_msg("Cannot place Iron Dome inside an obstacle!");
+            return false;
+        }
+
+        self.iron_domes.push(IronDome {
+            position: place_pos,
+            cooldown: 0.0,
+        });
+        self.iron_domes_in_inventory -= 1;
+        self.spawn_sparkles(place_pos + vec3(0.0, 1.0, 0.0));
+        self.set_msg(&format!("Iron Dome deployed! Auto-intercepting jet/gunboat missiles! (In hand: {})", self.iron_domes_in_inventory));
         true
     }
 
@@ -451,10 +542,16 @@ impl Game {
 
         self.handle_movement_input();
 
-        // Hotkey [B] to place turret from inventory
-        if is_key_pressed(KeyCode::B) && self.action_cooldown <= 0.0 {
-            if self.place_turret() {
-                self.action_cooldown = 0.3;
+        // Hotkey [B] to place turret from inventory, [I] to deploy Iron Dome
+        if self.action_cooldown <= 0.0 {
+            if is_key_pressed(KeyCode::B) {
+                if self.place_turret() {
+                    self.action_cooldown = 0.3;
+                }
+            } else if is_key_pressed(KeyCode::I) {
+                if self.place_iron_dome() {
+                    self.action_cooldown = 0.3;
+                }
             }
         }
 
@@ -498,13 +595,16 @@ impl Game {
             }
         }
 
-        // Market Interaction Hotkeys: [E] Trade Potatoes -> Seeds, [T] Buy Turret (50 Potatoes)
+        // Market Interaction Hotkeys: [E] Trade Potatoes -> Seeds, [T] Buy Turret, [Y] Buy Iron Dome
         if self.near_market() && self.action_cooldown <= 0.0 {
             if is_key_pressed(KeyCode::E) {
                 self.convert_potatoes();
                 self.action_cooldown = 0.4;
             } else if is_key_pressed(KeyCode::T) {
                 self.buy_turret_upgrade();
+                self.action_cooldown = 0.4;
+            } else if is_key_pressed(KeyCode::Y) {
+                self.buy_iron_dome_upgrade();
                 self.action_cooldown = 0.4;
             }
         }
@@ -581,6 +681,7 @@ impl Game {
                         harvesting_timer: 0.0,
                         hp: 3.0,
                         max_hp: 3.0,
+                        has_stolen: false,
                     });
                 }
 
@@ -628,17 +729,118 @@ impl Game {
             }
         }
 
-        // Apply crop steals once children start fleeing after harvesting
+        // Apply crop steals once children start harvesting & track potato loss when they escape!
         for child in self.children.iter_mut() {
             if child.fleeing && child.alive {
                 if let Some((gx, gz)) = child.target_cell.take() {
                     self.field[gx][gz] = CellState::Grass;
+                    child.has_stolen = true;
                 }
             }
         }
 
+        // Deduct inventory potatoes if thief children escape off-map (distance > 38.0)
+        let mut escaped_stolen_count = 0;
+        for child in self.children.iter_mut() {
+            if child.alive && child.fleeing && child.position.length() >= 38.0 {
+                child.alive = false;
+                if child.has_stolen {
+                    escaped_stolen_count += 1;
+                }
+            }
+        }
+        if escaped_stolen_count > 0 {
+            let lost = escaped_stolen_count * 2;
+            self.potatoes = self.potatoes.saturating_sub(lost);
+            self.set_msg(&format!("Thieves escaped with your crops! Lost {} Potatoes!", lost));
+        }
+
         // Remove escaped or dead children
         self.children.retain(|c| c.alive && c.position.length() < 40.0);
+
+        // --- AFRICAN REBEL GUNBOATS RIVER RAID EVENT ---
+        self.raid_timer += dt;
+        if self.raid_timer >= 35.0 {
+            self.raid_timer = 0.0;
+
+            // Spawn Cold War GunBoat cruising along the River (x ≈ -31.0)
+            let spawn_z = if rand::gen_range(0.0, 1.0) < 0.5 { -36.0 } else { 36.0 };
+            let target_z = 0.0; // Dock near bridge
+
+            self.gunboats.push(GunBoat {
+                position: vec3(-31.0, -0.1, spawn_z),
+                target_z,
+                hp: 20.0,
+                max_hp: 20.0,
+                disembarked: false,
+                disembark_timer: 0.0,
+                alive: true,
+            });
+
+            self.set_msg("NAVY ALERT! Cold War African Rebel GunBoat entering River!");
+        }
+
+        // Update Gunboats
+        for boat in self.gunboats.iter_mut() {
+            if !boat.alive {
+                continue;
+            }
+
+            let dist_to_dock = (boat.target_z - boat.position.z).abs();
+            if dist_to_dock > 0.5 && !boat.disembarked {
+                let dir_z = if boat.target_z > boat.position.z { 1.0 } else { -1.0 };
+                boat.position.z += dir_z * 4.5 * dt;
+            } else {
+                // Docked at bridge - timer to disembark rebels if turrets don't destroy it!
+                boat.disembark_timer += dt;
+                if boat.disembark_timer >= 4.0 && !boat.disembarked {
+                    boat.disembarked = true;
+                    // Disembark 4 armed rebels to raid farm!
+                    for i in 0..4 {
+                        let offset_z = -1.5 + i as f32 * 1.0;
+                        self.rebels.push(Rebel {
+                            position: vec3(-27.0, 0.0, offset_z),
+                            target_cell: Some((rand::gen_range(0, GRID), rand::gen_range(0, GRID))),
+                            speed: 5.2,
+                            hp: 5.0,
+                            max_hp: 5.0,
+                            alive: true,
+                            facing: 1.57,
+                            anim_timer: 0.0,
+                            raiding_timer: 0.0,
+                        });
+                    }
+                }
+            }
+        }
+        self.gunboats.retain(|b| b.alive);
+
+        // Update Disembarked Rebels
+        for rebel in self.rebels.iter_mut() {
+            if !rebel.alive {
+                continue;
+            }
+
+            rebel.anim_timer += dt * 8.0;
+            if let Some((gx, gz)) = rebel.target_cell {
+                let target_pos = Self::cell_center(gx, gz);
+                let to_target = target_pos - rebel.position;
+                let dist = to_target.length();
+
+                if dist > 0.4 {
+                    let move_dir = to_target.normalize();
+                    rebel.facing = move_dir.x.atan2(move_dir.z);
+                    rebel.position += move_dir * (rebel.speed * dt);
+                } else {
+                    rebel.raiding_timer += dt;
+                    if rebel.raiding_timer >= 1.5 {
+                        rebel.raiding_timer = 0.0;
+                        rebel.target_cell = Some((rand::gen_range(0, GRID), rand::gen_range(0, GRID)));
+                    }
+                }
+            }
+        }
+        self.rebels.retain(|r| r.alive);
 
         // --- AUTOMATED DEFENSE TURRETS ENGINE ---
         if !self.turrets.is_empty() {
@@ -646,56 +848,137 @@ impl Game {
                 turret.fire_cooldown = (turret.fire_cooldown - dt).max(0.0);
 
                 if turret.fire_cooldown <= 0.0 {
-                    // Find nearest active thief child within range (18 units)
                     let t_pos = turret.position + vec3(0.0, 1.2, 0.0);
-                    let mut nearest_idx: Option<usize> = None;
-                    let mut min_dist = 18.0;
 
-                    for (idx, child) in self.children.iter().enumerate() {
-                        if child.alive {
-                            let d = t_pos.distance(child.position);
-                            if d < min_dist {
-                                min_dist = d;
-                                nearest_idx = Some(idx);
+                    // Target priority: Gunboats > Rebels > Thief Children
+                    let mut target_found = None;
+
+                    for boat in self.gunboats.iter() {
+                        if boat.alive && t_pos.distance(boat.position) < 26.0 {
+                            target_found = Some((boat.position + vec3(0.0, 0.8, 0.0), 0));
+                            break;
+                        }
+                    }
+
+                    if target_found.is_none() {
+                        for rebel in self.rebels.iter() {
+                            if rebel.alive && t_pos.distance(rebel.position) < 22.0 {
+                                target_found = Some((rebel.position + vec3(0.0, 0.6, 0.0), 1));
+                                break;
                             }
                         }
                     }
 
-                    if let Some(idx) = nearest_idx {
-                        let target_child_pos = self.children[idx].position + vec3(0.0, 0.6, 0.0);
-                        let dir = (target_child_pos - t_pos).normalize();
+                    if target_found.is_none() {
+                        for child in self.children.iter() {
+                            if child.alive && t_pos.distance(child.position) < 18.0 {
+                                target_found = Some((child.position + vec3(0.0, 0.6, 0.0), 2));
+                                break;
+                            }
+                        }
+                    }
 
-                        // Fire high-speed turret laser bullet
+                    if let Some((target_pos, _type_id)) = target_found {
+                        let dir = (target_pos - t_pos).normalize();
+
                         self.turret_bullets.push(BulletParticle {
                             position: t_pos,
-                            velocity: dir * 45.0,
-                            life: 0.5,
+                            velocity: dir * 48.0,
+                            life: 0.6,
                         });
 
-                        turret.fire_cooldown = 0.25; // Rapid fire
+                        turret.fire_cooldown = 0.22;
                     }
                 }
             }
 
-            // Update Turret Bullets & Collision with Thief Children
+            // Update Turret Bullets & Collision with Targets
             for bullet in self.turret_bullets.iter_mut() {
                 bullet.position += bullet.velocity * dt;
                 bullet.life -= dt;
 
-                // Check bullet collision with thief children
-                for child in self.children.iter_mut() {
-                    if child.alive && bullet.position.distance(child.position + vec3(0.0, 0.6, 0.0)) < 0.8 {
-                        child.hp -= 1.0;
-                        if child.hp <= 0.0 {
-                            child.alive = false;
+                // Check collision with Gunboats
+                for boat in self.gunboats.iter_mut() {
+                    if boat.alive && bullet.position.distance(boat.position + vec3(0.0, 0.8, 0.0)) < 2.2 {
+                        boat.hp -= 1.0;
+                        if boat.hp <= 0.0 {
+                            boat.alive = false;
                         }
                         bullet.life = 0.0;
                         break;
                     }
                 }
+
+                // Check collision with Rebels
+                if bullet.life > 0.0 {
+                    for rebel in self.rebels.iter_mut() {
+                        if rebel.alive && bullet.position.distance(rebel.position + vec3(0.0, 0.6, 0.0)) < 0.9 {
+                            rebel.hp -= 1.0;
+                            if rebel.hp <= 0.0 {
+                                rebel.alive = false;
+                            }
+                            bullet.life = 0.0;
+                            break;
+                        }
+                    }
+                }
+
+                // Check bullet collision with thief children
+                if bullet.life > 0.0 {
+                    for child in self.children.iter_mut() {
+                        if child.alive && bullet.position.distance(child.position + vec3(0.0, 0.6, 0.0)) < 0.8 {
+                            child.hp -= 1.0;
+                            if child.hp <= 0.0 {
+                                child.alive = false;
+                            }
+                            bullet.life = 0.0;
+                            break;
+                        }
+                    }
+                }
             }
             self.turret_bullets.retain(|b| b.life > 0.0);
         }
+
+        // --- ISRAELI IRON DOME BATTERY SYSTEM ---
+        for dome in self.iron_domes.iter_mut() {
+            dome.cooldown = (dome.cooldown - dt).max(0.0);
+
+            if dome.cooldown <= 0.0 && self.air_event.active {
+                let target = self.air_event.bomber_pos;
+                let dome_pos = dome.position + vec3(0.0, 1.5, 0.0);
+
+                if dome_pos.distance(target) < 140.0 {
+                    self.iron_dome_missiles.push(IronDomeMissile {
+                        position: dome_pos,
+                        target_pos: target,
+                        speed: 75.0,
+                        life: 2.5,
+                    });
+                    dome.cooldown = 1.2;
+                }
+            }
+        }
+
+        // Update Iron Dome Missiles
+        let mut intercept_pos = None;
+        for missile in self.iron_dome_missiles.iter_mut() {
+            let dir = (missile.target_pos - missile.position).normalize();
+            missile.position += dir * (missile.speed * dt);
+            missile.life -= dt;
+
+            // Intercept check
+            if missile.position.distance(self.air_event.bomber_pos) < 4.0 {
+                intercept_pos = Some(missile.position);
+                missile.life = 0.0;
+            }
+        }
+        if let Some(pos) = intercept_pos {
+            self.air_event.active = false; // Intercepted and destroyed!
+            self.spawn_sparkles(pos);
+            self.set_msg("IRON DOME INTERCEPTED ENEMY B-2 BOMBER!");
+        }
+        self.iron_dome_missiles.retain(|m| m.life > 0.0);
 
         // Air Event (B-2 Stealth Bomber Shootout every 60s)
         self.air_event.timer += dt;

@@ -242,16 +242,6 @@ pub fn draw_thief_children(game: &Game) {
         draw_sphere(head_pos + forward * 0.155 + right * 0.05 + vec3(0.0, 0.02, 0.0), 0.012, None, BLACK);
         draw_sphere(head_pos + forward * 0.155 - right * 0.05 + vec3(0.0, 0.02, 0.0), 0.012, None, BLACK);
 
-        // 5. Carrying Stolen Potato Sack on back when fleeing!
-        if child.fleeing {
-            let sack_pos = torso_pos - forward * 0.18 + vec3(0.0, 0.05, 0.0);
-            draw_sphere(sack_pos, 0.24, None, sack_brown);
-            // Stolen potatoes sticking out of sack
-            let potato_color = Color::from_rgba(170, 125, 70, 255);
-            draw_sphere(sack_pos + vec3(0.05, 0.18, 0.0), 0.07, None, potato_color);
-            draw_sphere(sack_pos + vec3(-0.06, 0.16, 0.04), 0.06, None, potato_color);
-        }
-
         // 6. Floating 3D Health Bar above Thief Head
         let hp_ratio = (child.hp / child.max_hp).clamp(0.0, 1.0);
         let bar_center = head_pos + vec3(0.0, 0.45, 0.0);
@@ -261,6 +251,121 @@ pub fn draw_thief_children(game: &Game) {
             let hp_color = if hp_ratio > 0.5 { GREEN } else { RED };
             draw_cube(bar_center + vec3(-0.38 + hp_w / 2.0, 0.0, 0.01), vec3(hp_w, 0.08, 0.05), None, hp_color);
         }
+    }
+}
+
+// Draw Israeli Iron Dome Defense Battery
+pub fn draw_iron_domes(game: &Game) {
+    let dome_base = Color::from_rgba(75, 80, 85, 255);
+    let launcher_c = Color::from_rgba(110, 115, 120, 255);
+    let missile_c = Color::from_rgba(240, 240, 240, 255);
+
+    for dome in &game.iron_domes {
+        let pos = dome.position;
+        if !game.camera.is_in_view(pos, 3.0) {
+            continue;
+        }
+
+        // Heavy Armored Missile Launcher Base
+        draw_cube(pos + vec3(0.0, 0.4, 0.0), vec3(1.8, 0.8, 1.8), None, dome_base);
+
+        // Angled Missile Launch Pod (2x2 Tubes)
+        draw_cube(pos + vec3(0.0, 1.1, 0.0), vec3(1.4, 0.9, 1.4), None, launcher_c);
+        draw_cylinder(pos + vec3(0.3, 1.5, 0.3), 0.12, 0.12, 0.6, None, DARKGRAY);
+        draw_cylinder(pos + vec3(-0.3, 1.5, 0.3), 0.12, 0.12, 0.6, None, DARKGRAY);
+        draw_cylinder(pos + vec3(0.3, 1.5, -0.3), 0.12, 0.12, 0.6, None, DARKGRAY);
+        draw_cylinder(pos + vec3(-0.3, 1.5, -0.3), 0.12, 0.12, 0.6, None, DARKGRAY);
+        // Radar Dish on Side
+        draw_sphere(pos + vec3(0.9, 1.0, 0.0), 0.35, None, GOLD);
+    }
+
+    // In-flight Iron Dome Missiles
+    for m in &game.iron_dome_missiles {
+        if !game.camera.is_in_view(m.position, 2.0) {
+            continue;
+        }
+        draw_cylinder(m.position, 0.1, 0.08, 0.8, None, missile_c);
+        draw_sphere(m.position, 0.2, None, ORANGE);
+        draw_line_3d(m.position, m.position - vec3(0.0, 1.5, 0.0), RED);
+    }
+}
+
+// Draw Detailed Cold War Era African Rebel Gunboats
+pub fn draw_gunboats(game: &Game) {
+    let hull_c = Color::from_rgba(45, 60, 50, 255); // Camo Green Hull
+    let deck_c = Color::from_rgba(90, 85, 75, 255);
+    let cabin_c = Color::from_rgba(60, 70, 60, 255);
+    let turret_c = Color::from_rgba(30, 35, 30, 255);
+
+    for boat in &game.gunboats {
+        if !boat.alive {
+            continue;
+        }
+        let pos = boat.position;
+        if !game.camera.is_in_view(pos, 5.0) {
+            continue;
+        }
+
+        // 1. Long Steel Patrol Gunboat Hull
+        draw_cube(pos + vec3(0.0, 0.25, 0.0), vec3(2.4, 0.7, 6.5), None, hull_c);
+        draw_cube(pos + vec3(0.0, 0.5, 0.0), vec3(2.0, 0.2, 5.8), None, deck_c);
+
+        // 2. Cold War Wheelhouse / Armored Cabin
+        draw_cube(pos + vec3(0.0, 1.0, -0.4), vec3(1.6, 0.9, 2.2), None, cabin_c);
+        // Radar Mast & Radio Antenna
+        draw_cylinder(pos + vec3(0.0, 1.8, -0.4), 0.05, 0.05, 1.0, None, DARKGRAY);
+        draw_sphere(pos + vec3(0.0, 2.3, -0.4), 0.2, None, RED);
+
+        // 3. Heavy Mounted Deck Cannon Turret on Bow
+        draw_cylinder(pos + vec3(0.0, 0.8, 2.0), 0.45, 0.45, 0.5, None, turret_c);
+        draw_cylinder(pos + vec3(0.0, 1.0, 2.4), 0.08, 0.08, 1.2, None, BLACK);
+
+        // 4. Dual Heavy Machine Guns on Stern
+        draw_cylinder(pos + vec3(0.5, 0.8, -2.4), 0.06, 0.06, 0.8, None, BLACK);
+        draw_cylinder(pos + vec3(-0.5, 0.8, -2.4), 0.06, 0.06, 0.8, None, BLACK);
+
+        // 5. Water Wake & Exhaust Smoke
+        draw_sphere(pos + vec3(0.0, 0.0, -3.4), 0.6, None, Color::from_rgba(255, 255, 255, 180));
+    }
+}
+
+// Draw Armed Disembarked African Rebels
+pub fn draw_rebels(game: &Game) {
+    let skin_tone = Color::from_rgba(85, 50, 25, 255);
+    let camo_green = Color::from_rgba(50, 80, 45, 255);
+    let beret_red = Color::from_rgba(190, 40, 30, 255);
+
+    for rebel in &game.rebels {
+        if !rebel.alive {
+            continue;
+        }
+        let pos = rebel.position;
+        if !game.camera.is_in_view(pos, 2.0) {
+            continue;
+        }
+
+        let facing = rebel.facing;
+        let leg_swing = (rebel.anim_timer).sin() * 0.2;
+        let forward = vec3(facing.sin(), 0.0, facing.cos());
+        let right = vec3(forward.z, 0.0, -forward.x);
+
+        // Legs
+        draw_cylinder(pos + right * 0.1 + forward * leg_swing + vec3(0.0, 0.35, 0.0), 0.08, 0.08, 0.7, None, camo_green);
+        draw_cylinder(pos - right * 0.1 - forward * leg_swing + vec3(0.0, 0.35, 0.0), 0.08, 0.08, 0.7, None, camo_green);
+
+        // Torso
+        let torso_pos = pos + vec3(0.0, 1.05, 0.0);
+        draw_cylinder(torso_pos, 0.24, 0.22, 0.75, None, camo_green);
+
+        // Head & Red Beret
+        let head_pos = torso_pos + vec3(0.0, 0.55, 0.0);
+        draw_sphere(head_pos, 0.24, None, skin_tone);
+        draw_cylinder(head_pos + vec3(0.0, 0.12, 0.0), 0.3, 0.3, 0.08, None, beret_red);
+
+        // AK-47 Assault Rifle in hands
+        let gun_pos = torso_pos + forward * 0.35 - vec3(0.0, 0.1, 0.0);
+        draw_cube(gun_pos, vec3(0.1, 0.1, 0.7), None, Color::from_rgba(110, 70, 40, 255));
+        draw_cylinder(gun_pos + forward * 0.3, 0.03, 0.03, 0.4, None, BLACK);
     }
 }
 
@@ -505,7 +610,10 @@ pub fn draw_scene(game: &Game) {
 
     draw_surrounding_houses(game);
 
-    // Draw Defense Turrets and Thief Children
+    // Draw Iron Domes, Gunboats, Rebels, Defense Turrets and Thief Children
+    draw_iron_domes(game);
+    draw_gunboats(game);
+    draw_rebels(game);
     draw_turrets(game);
     draw_thief_children(game);
 
@@ -556,18 +664,17 @@ pub fn draw_scene(game: &Game) {
 }
 
 pub fn draw_hud(game: &Game) {
-    draw_rectangle(10.0, 10.0, 560.0, 215.0, Color::from_rgba(20, 25, 30, 200));
-    draw_rectangle_lines(10.0, 10.0, 560.0, 215.0, 2.0, GOLD);
+    draw_rectangle(10.0, 10.0, 620.0, 220.0, Color::from_rgba(20, 25, 30, 200));
+    draw_rectangle_lines(10.0, 10.0, 620.0, 220.0, 2.0, GOLD);
 
     draw_text("AFRICAN GUN RUNNER POTATO FARM", 20.0, 34.0, 20.0, GOLD);
-    draw_text("WASD / Arrows - Move 1 Square at a Time", 20.0, 60.0, 18.0, WHITE);
-    draw_text("SPACE - Plow Soil (Hold to till rows)", 20.0, 82.0, 18.0, WHITE);
-    draw_text("E - Plant / Harvest | [B] - Place Turret from Inventory", 20.0, 104.0, 18.0, WHITE);
+    draw_text("WASD / Arrows - Move Grid | SPACE - Plow Rows", 20.0, 60.0, 18.0, WHITE);
+    draw_text("E - Plant/Harvest | [B] Place Turret | [I] Deploy Iron Dome", 20.0, 104.0, 18.0, WHITE);
     draw_text("F5 / K - Save Game   |   F9 / L - Load Game", 20.0, 126.0, 18.0, SKYBLUE);
 
     let inv_text = format!(
-        "Seeds: {}   Potatoes: {}   Turrets in Hand: {} (Placed: {})",
-        game.seeds, game.potatoes, game.turrets_in_inventory, game.turrets.len()
+        "Seeds: {}  Potatoes: {}  Turrets: {}  IronDomes: {}",
+        game.seeds, game.potatoes, game.turrets_in_inventory, game.iron_domes_in_inventory
     );
     draw_text(&inv_text, 20.0, 158.0, 20.0, YELLOW);
 
@@ -598,7 +705,7 @@ pub fn draw_hud(game: &Game) {
 
     // ENHANCED MARKET SHOP & TYCOON UPGRADE HUD BANNER
     if game.near_market() {
-        let box_w = 660.0;
+        let box_w = 720.0;
         let box_x = screen_width() / 2.0 - box_w / 2.0;
         let box_y = screen_height() - 95.0;
         draw_rectangle(box_x, box_y, box_w, 80.0, Color::from_rgba(20, 35, 15, 240));
@@ -611,7 +718,7 @@ pub fn draw_hud(game: &Game) {
             20.0,
             GOLD,
         );
-        let shop_text = format!("[E] Trade Potatoes -> Seeds (1:4)   |   [T] Buy Turret ({} Potatoes)", TURRET_COST);
+        let shop_text = format!("[E] Trade Seeds | [T] Buy Turret ({} Pot) | [Y] Buy Iron Dome ({} Pot)", TURRET_COST, IRON_DOME_COST);
         draw_text(
             &shop_text,
             box_x + 20.0,
