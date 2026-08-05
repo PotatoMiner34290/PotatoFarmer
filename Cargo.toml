@@ -9,8 +9,11 @@ lto = "thin"
 
 [profile.release]
 opt-level = 3
-lto = true
+lto = "fat"
 codegen-units = 1
+panic = "abort"
+overflow-checks = false
+strip = true
 
 [dependencies]
 macroquad = "0.4"

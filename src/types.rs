@@ -149,6 +149,18 @@ pub struct CameraState {
     pub target: Vec3,
 }
 
+impl CameraState {
+    #[inline(always)]
+    pub fn is_in_view(&self, point: Vec3, radius: f32) -> bool {
+        // Orthographics camera frustum check centered around target position
+        let min_x = self.target.x - 30.0 - radius;
+        let max_x = self.target.x + 30.0 + radius;
+        let min_z = self.target.z - 25.0 - radius;
+        let max_z = self.target.z + 25.0 + radius;
+        point.x >= min_x && point.x <= max_x && point.z >= min_z && point.z <= max_z
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct HouseBounds {
     pub center: Vec3,
@@ -160,6 +172,7 @@ pub struct HouseBounds {
 }
 
 // Deterministic pseudo-random float [0..1] based on grid coordinates and seed index
+#[inline(always)]
 pub fn cell_hash(gx: usize, gz: usize, index: u32) -> f32 {
     let mut h = (gx as u32).wrapping_mul(374761393)
         ^ (gz as u32).wrapping_mul(668265263)

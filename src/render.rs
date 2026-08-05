@@ -150,6 +150,9 @@ pub fn draw_turrets(game: &Game) {
 
     for turret in &game.turrets {
         let pos = turret.position;
+        if !game.camera.is_in_view(pos, 2.0) {
+            continue;
+        }
 
         // Turret Mount Pedestal
         draw_cylinder(pos + vec3(0.0, 0.4, 0.0), 0.7, 0.6, 0.8, None, metal_dark);
@@ -164,6 +167,9 @@ pub fn draw_turrets(game: &Game) {
 
     // Render Laser Bullets fired by Turrets
     for bullet in &game.turret_bullets {
+        if !game.camera.is_in_view(bullet.position, 1.0) {
+            continue;
+        }
         draw_sphere(bullet.position, 0.16, None, RED);
         draw_line_3d(bullet.position, bullet.position - bullet.velocity * 0.04, YELLOW);
     }
@@ -183,6 +189,9 @@ pub fn draw_thief_children(game: &Game) {
         }
 
         let pos = child.position;
+        if !game.camera.is_in_view(pos, 2.0) {
+            continue;
+        }
         let facing = child.facing;
         let is_harvesting = child.harvesting_timer > 0.0 && !child.fleeing;
         let leg_swing = if is_harvesting { 0.0 } else { (child.anim_timer).sin() * 0.25 };
@@ -259,6 +268,9 @@ pub fn draw_field(game: &Game) {
     for gx in 0..GRID {
         for gz in 0..GRID {
             let center = Game::cell_center(gx, gz);
+            if !game.camera.is_in_view(center, CELL * 1.5) {
+                continue;
+            }
             let state = game.field[gx][gz];
 
             match state {
@@ -444,6 +456,9 @@ pub fn draw_surrounding_houses(game: &Game) {
 
     for house in &game.houses {
         let center = house.center;
+        if !game.camera.is_in_view(center, 4.0) {
+            continue;
+        }
         let style = house.style;
         let wall_c = wall_colors[style % wall_colors.len()];
         let roof_c = roof_colors[style % roof_colors.len()];
@@ -481,8 +496,12 @@ pub fn draw_scene(game: &Game) {
 
     let is_near_west = game.farmer.position.distance(WEST_MARKET_POS) < 3.8;
     let is_near_east = game.farmer.position.distance(EAST_MARKET_POS) < 3.8;
-    draw_market(WEST_MARKET_POS, "WEST MARKET", is_near_west);
-    draw_market(EAST_MARKET_POS, "EAST MARKET", is_near_east);
+    if game.camera.is_in_view(WEST_MARKET_POS, 5.0) {
+        draw_market(WEST_MARKET_POS, "WEST MARKET", is_near_west);
+    }
+    if game.camera.is_in_view(EAST_MARKET_POS, 5.0) {
+        draw_market(EAST_MARKET_POS, "EAST MARKET", is_near_east);
+    }
 
     draw_surrounding_houses(game);
 
@@ -491,6 +510,9 @@ pub fn draw_scene(game: &Game) {
     draw_thief_children(game);
 
     for particle in &game.dirt {
+        if !game.camera.is_in_view(particle.position, 1.0) {
+            continue;
+        }
         let alpha = (particle.life * 255.0) as u8;
         draw_sphere(
             particle.position,
@@ -506,6 +528,9 @@ pub fn draw_scene(game: &Game) {
     }
 
     for sparkle in &game.sparkles {
+        if !game.camera.is_in_view(sparkle.position, 1.0) {
+            continue;
+        }
         let progress = sparkle.life / sparkle.max_life;
         let alpha = (progress * 255.0) as u8;
         let size = 0.06 + progress * 0.08;
@@ -549,21 +574,27 @@ pub fn draw_hud(game: &Game) {
     let is_in_field = game.farmer.grid_x >= 0 && game.farmer.grid_x < GRID as i32 &&
                      game.farmer.grid_z >= 0 && game.farmer.grid_z < GRID as i32;
 
-    let status = if is_in_field {
+    if is_in_field {
         let gx = game.farmer.grid_x as usize;
         let gz = game.farmer.grid_z as usize;
         match game.field[gx][gz] {
-            CellState::Grass => "Tile: Grass (Hold SPACE to plow rich soil)".to_string(),
-            CellState::Plowed => "Tile: Plowed Soil (Press E to plant seed)".to_string(),
-            CellState::Planted { growth } if growth >= 1.0 => {
-                "Tile: Crop Mature! (Press E to harvest potato)".to_string()
+            CellState::Grass => {
+                draw_text("Tile: Grass (Hold SPACE to plow rich soil)", 20.0, 188.0, 18.0, LIGHTGRAY);
             }
-            CellState::Planted { growth } => format!("Tile: Growing... {}%", (growth * 100.0) as u32),
+            CellState::Plowed => {
+                draw_text("Tile: Plowed Soil (Press E to plant seed)", 20.0, 188.0, 18.0, LIGHTGRAY);
+            }
+            CellState::Planted { growth } if growth >= 1.0 => {
+                draw_text("Tile: Crop Mature! (Press E to harvest potato)", 20.0, 188.0, 18.0, LIGHTGRAY);
+            }
+            CellState::Planted { growth } => {
+                let status_buf = format!("Tile: Growing... {}%", (growth * 100.0) as u32);
+                draw_text(&status_buf, 20.0, 188.0, 18.0, LIGHTGRAY);
+            }
         }
     } else {
-        "Exploring Village / River Area".to_string()
-    };
-    draw_text(&status, 20.0, 188.0, 18.0, LIGHTGRAY);
+        draw_text("Exploring Village / River Area", 20.0, 188.0, 18.0, LIGHTGRAY);
+    }
 
     // ENHANCED MARKET SHOP & TYCOON UPGRADE HUD BANNER
     if game.near_market() {
@@ -580,8 +611,9 @@ pub fn draw_hud(game: &Game) {
             20.0,
             GOLD,
         );
+        let shop_text = format!("[E] Trade Potatoes -> Seeds (1:4)   |   [T] Buy Turret ({} Potatoes)", TURRET_COST);
         draw_text(
-            &format!("[E] Trade Potatoes -> Seeds (1:4)   |   [T] Buy Turret ({} Potatoes)", TURRET_COST),
+            &shop_text,
             box_x + 20.0,
             box_y + 54.0,
             18.0,
