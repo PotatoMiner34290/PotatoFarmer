@@ -35,7 +35,7 @@ pub const WEST_MARKET_POS: Vec3 = vec3(-FIELD_HALF - 1.2, 0.0, 0.0);
 pub const EAST_MARKET_POS: Vec3 = vec3(FIELD_HALF + 1.2, 0.0, 0.0);
 
 pub const POTATO_TO_SEED: u32 = 4;
-pub const TURRET_UPGRADE_COST: u32 = 150;
+pub const TURRET_COST: u32 = 50;
 pub const SAVE_FILE: &str = "savegame.json";
 
 #[derive(Clone, Copy, PartialEq)]
@@ -80,6 +80,10 @@ pub struct SaveData {
     pub farmer_grid_z: i32,
     pub field: Vec<Vec<CellStateSave>>,
     pub turrets_unlocked: bool,
+    #[serde(default)]
+    pub turrets_in_inventory: u32,
+    #[serde(default)]
+    pub turret_positions: Vec<(f32, f32, f32)>,
 }
 
 pub struct DirtParticle {
@@ -122,6 +126,8 @@ pub struct ThiefChild {
     pub facing: f32,
     pub anim_timer: f32,
     pub harvesting_timer: f32,
+    pub hp: f32,
+    pub max_hp: f32,
 }
 
 pub struct Turret {

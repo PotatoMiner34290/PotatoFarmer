@@ -145,10 +145,6 @@ pub fn draw_air_event_3d(game: &Game) {
 
 // Draw Defensive Guard Turrets
 pub fn draw_turrets(game: &Game) {
-    if !game.turrets_unlocked {
-        return;
-    }
-
     let metal_dark = Color::from_rgba(50, 55, 60, 255);
     let gun_green = Color::from_rgba(40, 80, 45, 255);
 
@@ -173,7 +169,7 @@ pub fn draw_turrets(game: &Game) {
     }
 }
 
-// Draw Thief Children (Detailed small brown children models with running/harvesting animations)
+// Draw Thief Children (Detailed small brown children models with running/harvesting animations & Health bar)
 pub fn draw_thief_children(game: &Game) {
     let skin_tone = Color::from_rgba(95, 58, 32, 255);
     let hair_dark = Color::from_rgba(25, 18, 12, 255);
@@ -246,6 +242,16 @@ pub fn draw_thief_children(game: &Game) {
             draw_sphere(sack_pos + vec3(0.05, 0.18, 0.0), 0.07, None, potato_color);
             draw_sphere(sack_pos + vec3(-0.06, 0.16, 0.04), 0.06, None, potato_color);
         }
+
+        // 6. Floating 3D Health Bar above Thief Head
+        let hp_ratio = (child.hp / child.max_hp).clamp(0.0, 1.0);
+        let bar_center = head_pos + vec3(0.0, 0.45, 0.0);
+        draw_cube(bar_center, vec3(0.8, 0.1, 0.05), None, BLACK);
+        if hp_ratio > 0.0 {
+            let hp_w = 0.76 * hp_ratio;
+            let hp_color = if hp_ratio > 0.5 { GREEN } else { RED };
+            draw_cube(bar_center + vec3(-0.38 + hp_w / 2.0, 0.0, 0.01), vec3(hp_w, 0.08, 0.05), None, hp_color);
+        }
     }
 }
 
@@ -259,392 +265,199 @@ pub fn draw_field(game: &Game) {
                 CellState::Grass => {
                     let color_variation = cell_hash(gx, gz, 0);
                     let grass_green = Color::from_rgba(
-                        (65.0 + color_variation * 18.0) as u8,
-                        (125.0 + color_variation * 25.0) as u8,
-                        (50.0 + color_variation * 15.0) as u8,
+                        (75.0 + color_variation * 20.0) as u8,
+                        (145.0 + color_variation * 25.0) as u8,
+                        (60.0 + color_variation * 15.0) as u8,
                         255,
                     );
                     draw_cube(
-                        center + vec3(0.0, -0.08, 0.0),
-                        vec3(CELL * 0.96, 0.16, CELL * 0.96),
+                        center - vec3(0.0, 0.05, 0.0),
+                        vec3(CELL * 0.96, 0.1, CELL * 0.96),
                         None,
                         grass_green,
                     );
-
-                    if cell_hash(gx, gz, 1) > 0.7 {
-                        let tuft_x = (cell_hash(gx, gz, 2) - 0.5) * 1.2;
-                        let tuft_z = (cell_hash(gx, gz, 3) - 0.5) * 1.2;
-                        draw_cylinder(
-                            center + vec3(tuft_x, 0.08, tuft_z),
-                            0.02,
-                            0.08,
-                            0.18,
-                            None,
-                            Color::from_rgba(80, 160, 60, 255),
-                        );
-                    }
                 }
-                CellState::Plowed | CellState::Planted { .. } => {
-                    let is_planted = matches!(state, CellState::Planted { .. });
-                    let base_color = if is_planted {
-                        Color::from_rgba(45, 28, 14, 255)
-                    } else {
-                        Color::from_rgba(55, 34, 18, 255)
-                    };
+                CellState::Plowed => {
                     draw_cube(
-                        center + vec3(0.0, -0.1, 0.0),
+                        center - vec3(0.0, 0.04, 0.0),
                         vec3(CELL * 0.96, 0.12, CELL * 0.96),
                         None,
-                        base_color,
+                        Color::from_rgba(95, 65, 38, 255),
                     );
-
-                    let num_furrows = 3;
-                    let furrow_w = (CELL * 0.92) / num_furrows as f32;
-                    for i in 0..num_furrows {
-                        let offset_x =
-                            -FIELD_HALF + (gx as f32 * CELL) + (i as f32 + 0.5) * furrow_w;
-                        let pos = vec3(offset_x, 0.02, center.z);
-                        let noise = cell_hash(gx, gz, i as u32 + 10);
-                        let r = (90.0 + noise * 30.0 - if is_planted { 15.0 } else { 0.0 }) as u8;
-                        let g = (55.0 + noise * 20.0 - if is_planted { 10.0 } else { 0.0 }) as u8;
-                        let b = (28.0 + noise * 12.0) as u8;
+                    for r in 0..3 {
+                        let offset_z = -0.5 + r as f32 * 0.5;
                         draw_cube(
-                            pos,
-                            vec3(furrow_w * 0.8, 0.1, CELL * 0.94),
+                            center + vec3(0.0, 0.05, offset_z),
+                            vec3(CELL * 0.9, 0.06, 0.28),
                             None,
-                            Color::from_rgba(r, g, b, 255),
+                            Color::from_rgba(70, 45, 25, 255),
                         );
                     }
                 }
+                CellState::Planted { growth } => {
+                    draw_cube(
+                        center - vec3(0.0, 0.04, 0.0),
+                        vec3(CELL * 0.96, 0.12, CELL * 0.96),
+                        None,
+                        Color::from_rgba(95, 65, 38, 255),
+                    );
+
+                    let plant_h = 0.2 + growth * 0.65;
+                    let stem_color = Color::from_rgba(60, 150, 50, 255);
+                    draw_cylinder(
+                        center + vec3(0.0, plant_h / 2.0, 0.0),
+                        0.08 + growth * 0.05,
+                        0.08 + growth * 0.05,
+                        plant_h,
+                        None,
+                        stem_color,
+                    );
+
+                    if growth > 0.3 {
+                        let leaf_green = Color::from_rgba(40, 180, 60, 255);
+                        let leaf_spread = growth * 0.45;
+                        draw_sphere(
+                            center + vec3(leaf_spread, plant_h * 0.6, 0.0),
+                            0.12 + growth * 0.1,
+                            None,
+                            leaf_green,
+                        );
+                        draw_sphere(
+                            center + vec3(-leaf_spread, plant_h * 0.6, 0.0),
+                            0.12 + growth * 0.1,
+                            None,
+                            leaf_green,
+                        );
+                        draw_sphere(
+                            center + vec3(0.0, plant_h * 0.6, leaf_spread),
+                            0.12 + growth * 0.1,
+                            None,
+                            leaf_green,
+                        );
+                        draw_sphere(
+                            center + vec3(0.0, plant_h * 0.6, -leaf_spread),
+                            0.12 + growth * 0.1,
+                            None,
+                            leaf_green,
+                        );
+                    }
+
+                    if growth >= 1.0 {
+                        let pot_color = Color::from_rgba(180, 130, 70, 255);
+                        draw_sphere(center + vec3(0.18, 0.1, 0.15), 0.18, None, pot_color);
+                        draw_sphere(center + vec3(-0.15, 0.08, -0.2), 0.16, None, pot_color);
+                        draw_sphere(center + vec3(0.0, 0.12, 0.22), 0.17, None, pot_color);
+                    }
+                }
             }
-
-            if let CellState::Planted { growth } = state {
-                draw_potato_plant(center, growth);
-            }
-        }
-    }
-}
-
-pub fn draw_potato_plant(center: Vec3, growth: f32) {
-    let height = 0.15 + growth * 1.1;
-
-    // Main stem
-    draw_cylinder(
-        center + vec3(0.0, height / 2.0 + 0.08, 0.0),
-        0.06,
-        0.06,
-        height,
-        None,
-        Color::from_rgba(45, 120, 40, 255),
-    );
-
-    // Foliage bush (single merged sphere when growing instead of multiple sub-spheres)
-    if growth > 0.25 {
-        draw_sphere(
-            center + vec3(0.0, 0.45 + growth * 0.4, 0.0),
-            0.22 + growth * 0.18,
-            None,
-            Color::from_rgba(55, 155, 48, 255),
-        );
-    }
-
-    // Mature Potatoes (2 distinct potatoes instead of 3 extra spheres per plant)
-    if growth > 0.85 {
-        let potato = Color::from_rgba(170, 125, 70, 255);
-        draw_sphere(center + vec3(-0.15, 0.14, 0.1), 0.14, None, potato);
-        draw_sphere(center + vec3(0.15, 0.12, -0.1), 0.13, None, potato);
-    }
-}
-
-pub fn draw_farmer_3d(farmer: &Farmer) {
-    let pos = farmer.position;
-    let forward = vec3(farmer.facing.sin(), 0.0, farmer.facing.cos());
-    let right = vec3(forward.z, 0.0, -forward.x);
-
-    draw_cylinder(
-        pos + right * 0.12 + vec3(0.0, 0.25, 0.0),
-        0.09,
-        0.09,
-        0.5,
-        None,
-        Color::from_rgba(30, 40, 60, 255),
-    );
-    draw_cylinder(
-        pos - right * 0.12 + vec3(0.0, 0.25, 0.0),
-        0.09,
-        0.09,
-        0.5,
-        None,
-        Color::from_rgba(30, 40, 60, 255),
-    );
-
-    draw_cylinder(
-        pos + vec3(0.0, 0.75, 0.0),
-        0.28,
-        0.24,
-        0.8,
-        None,
-        Color::from_rgba(110, 75, 45, 255),
-    );
-
-    draw_sphere(
-        pos + vec3(0.0, 1.35, 0.0),
-        0.25,
-        None,
-        Color::from_rgba(85, 50, 30, 255),
-    );
-    draw_sphere(
-        pos + forward * 0.22 + vec3(0.0, 1.35, 0.0),
-        0.04,
-        None,
-        Color::from_rgba(70, 40, 20, 255),
-    );
-
-    draw_cylinder(
-        pos + right * 0.35 + vec3(0.0, 0.85, 0.0),
-        0.07,
-        0.07,
-        0.55,
-        None,
-        Color::from_rgba(85, 50, 30, 255),
-    );
-    draw_cylinder(
-        pos - right * 0.35 + vec3(0.0, 0.85, 0.0),
-        0.07,
-        0.07,
-        0.55,
-        None,
-        Color::from_rgba(85, 50, 30, 255),
-    );
-
-    draw_cylinder(
-        pos + vec3(0.0, 1.65, 0.0),
-        0.15,
-        0.48,
-        0.35,
-        None,
-        Color::from_rgba(210, 170, 80, 255),
-    );
-    draw_cylinder(
-        pos + vec3(0.0, 1.52, 0.0),
-        0.5,
-        0.5,
-        0.06,
-        None,
-        Color::from_rgba(230, 190, 100, 255),
-    );
-
-    draw_line_3d(
-        pos + right * 0.35 + vec3(0.0, 0.8, 0.0),
-        pos + forward * 0.8 + vec3(0.0, 0.3, 0.0),
-        DARKGRAY,
-    );
-
-    if farmer.plowing {
-        draw_cube(
-            pos + forward * 0.9 + vec3(0.0, 0.15, 0.0),
-            vec3(0.5, 0.12, 0.35),
-            None,
-            Color::from_rgba(60, 60, 65, 255),
-        );
-    }
-}
-
-pub fn draw_market(pos: Vec3, _name: &str, is_near: bool) {
-    let wood_dark = Color::from_rgba(85, 55, 35, 255);
-    let wood_plank = Color::from_rgba(120, 80, 48, 255);
-    let metal_roof = Color::from_rgba(130, 135, 140, 255);
-    let metal_rust = Color::from_rgba(165, 75, 45, 255);
-    let sandbag_color = Color::from_rgba(185, 165, 120, 255);
-    let ammo_green = Color::from_rgba(65, 85, 50, 255);
-
-    draw_cube(
-        pos + vec3(0.0, 1.3, 0.0),
-        vec3(3.4, 2.6, 3.4),
-        None,
-        wood_dark,
-    );
-
-    for i in 0..5 {
-        let y_offset = 0.3 + i as f32 * 0.5;
-        draw_cube(
-            pos + vec3(0.0, y_offset, 1.72),
-            vec3(3.3, 0.35, 0.04),
-            None,
-            wood_plank,
-        );
-        draw_cube(
-            pos + vec3(0.0, y_offset, -1.72),
-            vec3(3.3, 0.35, 0.04),
-            None,
-            wood_plank,
-        );
-    }
-
-    let roof_center = pos + vec3(0.0, 2.85, 0.0);
-    draw_cube(roof_center, vec3(4.0, 0.18, 4.0), None, metal_roof);
-    for r in 0..4 {
-        let rx = -1.5 + r as f32 * 1.0;
-        draw_cube(
-            roof_center + vec3(rx, 0.12, 0.0),
-            vec3(0.45, 0.08, 3.9),
-            None,
-            metal_rust,
-        );
-    }
-
-    draw_cube(
-        pos + vec3(0.0, 2.3, 2.0),
-        vec3(3.8, 0.1, 1.6),
-        None,
-        Color::from_rgba(210, 60, 40, 255),
-    );
-    for s in 0..3 {
-        let sx = -1.2 + s as f32 * 1.2;
-        draw_cube(
-            pos + vec3(sx, 2.35, 2.0),
-            vec3(0.6, 0.12, 1.62),
-            None,
-            Color::from_rgba(240, 190, 50, 255),
-        );
-    }
-
-    draw_cube(
-        pos + vec3(0.0, 0.9, 1.71),
-        vec3(1.2, 1.8, 0.06),
-        None,
-        Color::from_rgba(20, 15, 10, 255),
-    );
-
-    for s in 0..3 {
-        let sx = -1.3 + s as f32 * 1.3;
-        draw_cube(
-            pos + vec3(sx, 0.11, 2.3),
-            vec3(0.9, 0.22, 0.45),
-            None,
-            sandbag_color,
-        );
-    }
-    draw_cube(
-        pos + vec3(1.2, 0.25, 1.9),
-        vec3(0.7, 0.5, 0.5),
-        None,
-        ammo_green,
-    );
-
-    let rifle_pos = pos + vec3(-0.7, 0.5, 2.2);
-    draw_cube(rifle_pos, vec3(0.1, 0.35, 0.08), None, Color::from_rgba(90, 50, 25, 255));
-    draw_cube(rifle_pos + vec3(0.0, 0.35, 0.0), vec3(0.06, 0.5, 0.06), None, BLACK);
-
-    let antenna_pos = pos + vec3(-1.6, 3.0, -1.6);
-    draw_cylinder(antenna_pos, 0.04, 0.06, 3.5, None, DARKGRAY);
-    draw_sphere(antenna_pos + vec3(0.0, 1.8, 0.0), 0.12, None, RED);
-
-    draw_cube(
-        pos + vec3(0.0, 2.35, 2.55),
-        vec3(2.4, 0.5, 0.08),
-        None,
-        Color::from_rgba(40, 70, 30, 255),
-    );
-    draw_cube_wires(
-        pos + vec3(0.0, 2.35, 2.55),
-        vec3(2.42, 0.52, 0.1),
-        GOLD,
-    );
-
-    // TRADING GRID BOUNDARIES DRAWN AROUND THE MARKET PERIMETER
-    let market_gx = ((pos.x + FIELD_HALF) / CELL).floor() as i32;
-    let market_gz = ((pos.z + FIELD_HALF) / CELL).floor() as i32;
-
-    for dx in -1..=1 {
-        for dz in -1..=1 {
-            let tile_center = Game::grid_to_world(market_gx + dx, market_gz + dz);
-            draw_cube_wires(
-                tile_center + vec3(0.0, 0.04, 0.0),
-                vec3(CELL * 0.98, 0.08, CELL * 0.98),
-                if is_near { GOLD } else { Color::from_rgba(70, 180, 240, 180) },
-            );
-        }
-    }
-
-    if is_near {
-        let pulse = (get_time() * 5.0).sin() as f32 * 0.1;
-        draw_cylinder(
-            pos + vec3(0.0, 0.02, 2.2),
-            1.4 + pulse,
-            1.4 + pulse,
-            0.04,
-            None,
-            Color::from_rgba(255, 215, 0, 140),
-        );
-    }
-}
-
-pub fn draw_surrounding_houses(game: &Game) {
-    for h in &game.houses {
-        let pos = h.center;
-        match h.style {
-            0 => {
-                let mud_color = Color::from_rgba(150, 100, 60, 255);
-                let thatch_color = Color::from_rgba(215, 170, 80, 255);
-                draw_cylinder(pos + vec3(0.0, 1.1, 0.0), 1.4, 1.5, 2.2, None, mud_color);
-                draw_cylinder(pos + vec3(0.0, 2.7, 0.0), 0.05, 1.8, 1.3, None, thatch_color);
-                draw_cube(pos + vec3(0.0, 0.7, 1.42), vec3(0.7, 1.4, 0.1), None, Color::from_rgba(30, 20, 10, 255));
-            }
-            1 => {
-                let tin_color = Color::from_rgba(135, 140, 145, 255);
-                let rust_color = Color::from_rgba(175, 80, 45, 255);
-                draw_cube(pos + vec3(0.0, 1.1, 0.0), vec3(2.8, 2.2, 2.8), None, tin_color);
-                draw_cube(pos + vec3(0.0, 2.3, 0.0), vec3(3.2, 0.15, 3.2), None, rust_color);
-                draw_cube(pos + vec3(0.0, 1.9, 1.7), vec3(2.8, 0.08, 1.2), None, rust_color);
-                draw_cylinder(pos + vec3(-1.1, 0.9, 2.1), 0.06, 0.06, 1.8, None, DARKGRAY);
-                draw_cylinder(pos + vec3(1.1, 0.9, 2.1), 0.06, 0.06, 1.8, None, DARKGRAY);
-            }
-            2 => {
-                let plaster_color = Color::from_rgba(230, 220, 190, 255);
-                let tile_color = Color::from_rgba(185, 75, 50, 255);
-                draw_cube(pos + vec3(0.0, 1.3, 0.0), vec3(3.0, 2.6, 2.8), None, plaster_color);
-                draw_cube(pos + vec3(0.0, 2.75, 0.0), vec3(3.4, 0.3, 3.2), None, tile_color);
-                draw_cube(pos + vec3(-0.9, 1.5, 1.42), vec3(0.5, 0.6, 0.05), None, Color::from_rgba(90, 55, 30, 255));
-                draw_cube(pos + vec3(0.9, 1.5, 1.42), vec3(0.5, 0.6, 0.05), None, Color::from_rgba(90, 55, 30, 255));
-            }
-            3 => {
-                let concrete_color = Color::from_rgba(145, 150, 155, 255);
-                let sandbag_color = Color::from_rgba(185, 165, 120, 255);
-
-                draw_cube(pos + vec3(0.0, 1.3, 0.0), vec3(3.8, 2.6, 3.8), None, concrete_color);
-                draw_cube(pos + vec3(0.0, 3.2, 0.0), vec3(3.2, 1.4, 3.2), None, Color::from_rgba(170, 120, 75, 255));
-                draw_cube(pos + vec3(0.0, 4.0, 0.0), vec3(4.2, 0.15, 4.2), None, Color::from_rgba(130, 135, 140, 255));
-                draw_cube_wires(pos + vec3(0.0, 3.9, 0.0), vec3(3.4, 0.8, 3.4), BLACK);
-
-                draw_cube(pos + vec3(0.8, 4.2, 0.5), vec3(0.9, 0.06, 0.7), None, Color::from_rgba(30, 70, 140, 255));
-                draw_sphere(pos + vec3(-0.8, 4.3, -0.5), 0.25, None, WHITE);
-
-                draw_cube(pos + vec3(-1.2, 0.2, 2.1), vec3(1.2, 0.4, 0.4), None, sandbag_color);
-                draw_cube(pos + vec3(1.2, 0.2, 2.1), vec3(1.2, 0.4, 0.4), None, sandbag_color);
-
-                draw_cube(pos + vec3(1.5, 0.3, 1.8), vec3(0.6, 0.6, 0.6), None, Color::from_rgba(65, 85, 50, 255));
-                let rifle_pos = pos + vec3(-1.5, 0.5, 2.0);
-                draw_cube(rifle_pos, vec3(0.1, 0.35, 0.08), None, Color::from_rgba(90, 50, 25, 255));
-                draw_cube(rifle_pos + vec3(0.0, 0.35, 0.0), vec3(0.06, 0.5, 0.06), None, BLACK);
-            }
-            _ => {}
         }
     }
 }
 
 pub fn draw_current_tile_marker(game: &Game) {
-    let center = Game::grid_to_world(game.farmer.grid_x, game.farmer.grid_z);
+    let gx = game.farmer.grid_x;
+    let gz = game.farmer.grid_z;
 
-    draw_cube_wires(
-        center + vec3(0.0, 0.3, 0.0),
-        vec3(CELL * 0.94, 0.6, CELL * 0.94),
-        YELLOW,
-    );
+    if gx >= 0 && gx < GRID as i32 && gz >= 0 && gz < GRID as i32 {
+        let center = Game::cell_center(gx as usize, gz as usize);
+        let pulse = (get_time() * 4.0).sin() as f32 * 0.05;
+        draw_cube_wires(
+            center + vec3(0.0, 0.1, 0.0),
+            vec3(CELL + pulse, 0.3, CELL + pulse),
+            GOLD,
+        );
+    }
+}
+
+pub fn draw_farmer_3d(farmer: &Farmer) {
+    let pos = farmer.position;
+    let facing = farmer.facing;
+
+    let skin_tone = Color::from_rgba(90, 55, 30, 255);
+    let shirt_blue = Color::from_rgba(40, 90, 160, 255);
+    let pants_brown = Color::from_rgba(80, 50, 25, 255);
+    let hat_yellow = Color::from_rgba(220, 180, 50, 255);
+
+    let forward = vec3(facing.sin(), 0.0, facing.cos());
+    let right = vec3(forward.z, 0.0, -forward.x);
+
+    let l_leg_pos = pos + right * 0.14 + vec3(0.0, 0.35, 0.0);
+    let r_leg_pos = pos - right * 0.14 + vec3(0.0, 0.35, 0.0);
+    draw_cylinder(l_leg_pos, 0.09, 0.09, 0.7, None, pants_brown);
+    draw_cylinder(r_leg_pos, 0.09, 0.09, 0.7, None, pants_brown);
+
+    let torso_pos = pos + vec3(0.0, 1.05, 0.0);
+    draw_cylinder(torso_pos, 0.28, 0.24, 0.75, None, shirt_blue);
+
+    let head_pos = torso_pos + vec3(0.0, 0.55, 0.0);
+    draw_sphere(head_pos, 0.26, None, skin_tone);
+
+    let hat_pos = head_pos + vec3(0.0, 0.12, 0.0);
+    draw_cylinder(hat_pos, 0.55, 0.55, 0.06, None, hat_yellow);
+    draw_sphere(hat_pos + vec3(0.0, 0.1, 0.0), 0.28, None, hat_yellow);
+
+    let l_arm_pos = torso_pos + right * 0.32;
+    let r_arm_pos = torso_pos - right * 0.32;
+    draw_cylinder(l_arm_pos, 0.07, 0.07, 0.6, None, skin_tone);
+    draw_cylinder(r_arm_pos, 0.07, 0.07, 0.6, None, skin_tone);
+
+    if farmer.plowing {
+        let hoe_handle_start = torso_pos + forward * 0.3;
+        let hoe_handle_end = hoe_handle_start + forward * 0.8 - vec3(0.0, 0.7, 0.0);
+        draw_line_3d(hoe_handle_start, hoe_handle_end, Color::from_rgba(120, 80, 45, 255));
+        draw_cube(hoe_handle_end, vec3(0.25, 0.05, 0.15), None, GRAY);
+    }
+}
+
+pub fn draw_market(pos: Vec3, _label: &str, is_near: bool) {
+    let building_color = Color::from_rgba(150, 100, 50, 255);
+    let roof_color = Color::from_rgba(180, 50, 40, 255);
+    let counter_color = Color::from_rgba(100, 65, 35, 255);
+
+    draw_cube(pos + vec3(0.0, 1.0, 0.0), vec3(3.2, 2.0, 3.2), None, building_color);
+    draw_cube(pos + vec3(0.0, 2.2, 0.0), vec3(3.6, 0.4, 3.6), None, roof_color);
+
+    let sign_color = if is_near { GOLD } else { WHITE };
+    draw_cube(pos + vec3(0.0, 2.6, 0.0), vec3(2.6, 0.5, 0.2), None, sign_color);
+    draw_cube(pos + vec3(0.0, 0.5, 1.65), vec3(2.8, 1.0, 0.3), None, counter_color);
+
+    let p1 = pos + vec3(0.4, 1.1, 1.65);
+    let p2 = pos + vec3(-0.4, 1.1, 1.65);
+    let pot_c = Color::from_rgba(175, 120, 65, 255);
+    draw_sphere(p1, 0.22, None, pot_c);
+    draw_sphere(p2, 0.22, None, pot_c);
+}
+
+pub fn draw_surrounding_houses(game: &Game) {
+    let wall_colors = [
+        Color::from_rgba(185, 160, 125, 255),
+        Color::from_rgba(160, 120, 85, 255),
+        Color::from_rgba(200, 180, 150, 255),
+        Color::from_rgba(140, 110, 80, 255),
+    ];
+    let roof_colors = [
+        Color::from_rgba(175, 75, 55, 255),
+        Color::from_rgba(70, 110, 140, 255),
+        Color::from_rgba(150, 115, 60, 255),
+        Color::from_rgba(90, 130, 75, 255),
+    ];
+
+    for house in &game.houses {
+        let center = house.center;
+        let style = house.style;
+        let wall_c = wall_colors[style % wall_colors.len()];
+        let roof_c = roof_colors[style % roof_colors.len()];
+
+        draw_cube(center + vec3(0.0, 1.0, 0.0), vec3(2.8, 2.0, 2.8), None, wall_c);
+        draw_cube(center + vec3(0.0, 2.3, 0.0), vec3(3.2, 0.6, 3.2), None, roof_c);
+        draw_cube(center + vec3(0.0, 0.7, 1.42), vec3(0.7, 1.4, 0.08), None, Color::from_rgba(65, 45, 25, 255));
+        draw_cube(center + vec3(0.8, 1.2, 1.42), vec3(0.5, 0.5, 0.08), None, Color::from_rgba(180, 220, 240, 255));
+        draw_cube(center + vec3(-0.8, 1.2, 1.42), vec3(0.5, 0.5, 0.08), None, Color::from_rgba(180, 220, 240, 255));
+    }
 }
 
 pub fn draw_scene(game: &Game) {
-    clear_background(Color::from_rgba(135, 195, 235, 255));
+    clear_background(Color::from_rgba(135, 206, 235, 255));
 
     set_camera(&Camera3D {
         position: game.camera.position,
@@ -718,30 +531,20 @@ pub fn draw_scene(game: &Game) {
 }
 
 pub fn draw_hud(game: &Game) {
-    draw_rectangle(10.0, 10.0, 520.0, 215.0, Color::from_rgba(20, 25, 30, 200));
-    draw_rectangle_lines(10.0, 10.0, 520.0, 215.0, 2.0, GOLD);
+    draw_rectangle(10.0, 10.0, 560.0, 215.0, Color::from_rgba(20, 25, 30, 200));
+    draw_rectangle_lines(10.0, 10.0, 560.0, 215.0, 2.0, GOLD);
 
     draw_text("AFRICAN GUN RUNNER POTATO FARM", 20.0, 34.0, 20.0, GOLD);
     draw_text("WASD / Arrows - Move 1 Square at a Time", 20.0, 60.0, 18.0, WHITE);
-    draw_text(
-        "SPACE - Plow Soil (Hold to till rows)",
-        20.0,
-        82.0,
-        18.0,
-        WHITE,
-    );
-    draw_text(
-        "E - Plant / Harvest | Stand at Market Grid to Enter Shop",
-        20.0,
-        104.0,
-        18.0,
-        WHITE,
-    );
+    draw_text("SPACE - Plow Soil (Hold to till rows)", 20.0, 82.0, 18.0, WHITE);
+    draw_text("E - Plant / Harvest | [B] - Place Turret from Inventory", 20.0, 104.0, 18.0, WHITE);
     draw_text("F5 / K - Save Game   |   F9 / L - Load Game", 20.0, 126.0, 18.0, SKYBLUE);
 
-    let turret_status = if game.turrets_unlocked { " [DEFENSE TURRETS ACTIVE]" } else { "" };
-    let inv_text = format!("Seeds: {}   Potatoes: {}{}", game.seeds, game.potatoes, turret_status);
-    draw_text(&inv_text, 20.0, 158.0, 22.0, YELLOW);
+    let inv_text = format!(
+        "Seeds: {}   Potatoes: {}   Turrets in Hand: {} (Placed: {})",
+        game.seeds, game.potatoes, game.turrets_in_inventory, game.turrets.len()
+    );
+    draw_text(&inv_text, 20.0, 158.0, 20.0, YELLOW);
 
     let is_in_field = game.farmer.grid_x >= 0 && game.farmer.grid_x < GRID as i32 &&
                      game.farmer.grid_z >= 0 && game.farmer.grid_z < GRID as i32;
@@ -764,7 +567,7 @@ pub fn draw_hud(game: &Game) {
 
     // ENHANCED MARKET SHOP & TYCOON UPGRADE HUD BANNER
     if game.near_market() {
-        let box_w = 640.0;
+        let box_w = 660.0;
         let box_x = screen_width() / 2.0 - box_w / 2.0;
         let box_y = screen_height() - 95.0;
         draw_rectangle(box_x, box_y, box_w, 80.0, Color::from_rgba(20, 35, 15, 240));
@@ -778,7 +581,7 @@ pub fn draw_hud(game: &Game) {
             GOLD,
         );
         draw_text(
-            "[E] Trade Potatoes -> Seeds (1:4)   |   [T] Buy Turret Upgrade (150 Potatoes)",
+            &format!("[E] Trade Potatoes -> Seeds (1:4)   |   [T] Buy Turret ({} Potatoes)", TURRET_COST),
             box_x + 20.0,
             box_y + 54.0,
             18.0,
@@ -794,3 +597,5 @@ pub fn draw_hud(game: &Game) {
         draw_text(&game.status_msg, msg_x + 15.0, msg_y + 26.0, 18.0, WHITE);
     }
 }
+
+

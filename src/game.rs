@@ -19,6 +19,7 @@ pub struct Game {
     pub houses: Vec<HouseBounds>,
     // New Tycoon & Defense Features
     pub turrets_unlocked: bool,
+    pub turrets_in_inventory: u32,
     pub turrets: Vec<Turret>,
     pub children: Vec<ThiefChild>,
     pub steal_timer: f32,
@@ -67,6 +68,7 @@ impl Game {
             },
             houses,
             turrets_unlocked: false,
+            turrets_in_inventory: 0,
             turrets: Vec::new(),
             children: Vec::new(),
             steal_timer: 0.0,
@@ -79,15 +81,6 @@ impl Game {
         }
 
         game
-    }
-
-    pub fn setup_turrets(&mut self) {
-        self.turrets.clear();
-        // 4 Corner Defense Turrets around the Field
-        self.turrets.push(Turret { position: vec3(-FIELD_HALF - 1.5, 0.0, -FIELD_HALF - 1.5), fire_cooldown: 0.0 });
-        self.turrets.push(Turret { position: vec3(FIELD_HALF + 1.5, 0.0, -FIELD_HALF - 1.5), fire_cooldown: 0.0 });
-        self.turrets.push(Turret { position: vec3(-FIELD_HALF - 1.5, 0.0, FIELD_HALF + 1.5), fire_cooldown: 0.0 });
-        self.turrets.push(Turret { position: vec3(FIELD_HALF + 1.5, 0.0, FIELD_HALF + 1.5), fire_cooldown: 0.0 });
     }
 
     pub fn generate_houses(houses: &mut Vec<HouseBounds>) {
@@ -161,6 +154,8 @@ impl Game {
             .map(|row| row.iter().map(|c| CellStateSave::from(*c)).collect())
             .collect();
 
+        let turret_positions = self.turrets.iter().map(|t| (t.position.x, t.position.y, t.position.z)).collect();
+
         let save_data = SaveData {
             seeds: self.seeds,
             potatoes: self.potatoes,
@@ -168,6 +163,8 @@ impl Game {
             farmer_grid_z: self.farmer.grid_z,
             field: field_save,
             turrets_unlocked: self.turrets_unlocked,
+            turrets_in_inventory: self.turrets_in_inventory,
+            turret_positions,
         };
 
         if let Ok(json) = serde_json::to_string_pretty(&save_data) {
@@ -192,8 +189,10 @@ impl Game {
                     self.farmer.grid_z = data.farmer_grid_z;
                     self.farmer.position = Self::grid_to_world(self.farmer.grid_x, self.farmer.grid_z);
                     self.turrets_unlocked = data.turrets_unlocked;
-                    if self.turrets_unlocked {
-                        self.setup_turrets();
+                    self.turrets_in_inventory = data.turrets_in_inventory;
+                    self.turrets.clear();
+                    for (x, y, z) in data.turret_positions {
+                        self.turrets.push(Turret { position: vec3(x, y, z), fire_cooldown: 0.0 });
                     }
 
                     for (gx, row) in data.field.iter().enumerate().take(GRID) {
@@ -305,21 +304,45 @@ impl Game {
     }
 
     pub fn buy_turret_upgrade(&mut self) -> bool {
-        if self.turrets_unlocked {
-            self.set_msg("Defensive Guard Turrets already installed!");
-            return false;
-        }
-        if self.potatoes < TURRET_UPGRADE_COST {
-            self.set_msg(&format!("Need 150 Potatoes to purchase Turrets! (Have {})", self.potatoes));
+        if self.potatoes < TURRET_COST {
+            self.set_msg(&format!("Need {} Potatoes to buy a Turret! (Have {})", TURRET_COST, self.potatoes));
             return false;
         }
 
-        self.potatoes -= TURRET_UPGRADE_COST;
+        self.potatoes -= TURRET_COST;
         self.turrets_unlocked = true;
-        self.setup_turrets();
+        self.turrets_in_inventory += 1;
         let m_pos = self.active_market_pos();
         self.spawn_sparkles(m_pos + vec3(0.0, 1.5, 0.0));
-        self.set_msg("UNLOCKED! 4 Corner Automated Gun Turrets installed on Farm!");
+        self.set_msg(&format!("Bought Turret! Inventory: {}. Walk to land & press [B] to place!", self.turrets_in_inventory));
+        true
+    }
+
+    pub fn place_turret(&mut self) -> bool {
+        if self.turrets_in_inventory == 0 {
+            self.set_msg("No turrets in inventory! Buy them at the Market.");
+            return false;
+        }
+
+        let place_pos = self.farmer.position;
+        // Check if a turret is already placed very close (within 1.5 units)
+        if self.turrets.iter().any(|t| t.position.distance(place_pos) < 1.5) {
+            self.set_msg("Too close to another turret!");
+            return false;
+        }
+
+        if self.hits_solid_obstacle(place_pos) {
+            self.set_msg("Cannot place turret inside an obstacle!");
+            return false;
+        }
+
+        self.turrets.push(Turret {
+            position: place_pos,
+            fire_cooldown: 0.0,
+        });
+        self.turrets_in_inventory -= 1;
+        self.spawn_sparkles(place_pos + vec3(0.0, 1.0, 0.0));
+        self.set_msg(&format!("Turret placed down! (Remaining in inventory: {})", self.turrets_in_inventory));
         true
     }
 
@@ -428,6 +451,13 @@ impl Game {
 
         self.handle_movement_input();
 
+        // Hotkey [B] to place turret from inventory
+        if is_key_pressed(KeyCode::B) && self.action_cooldown <= 0.0 {
+            if self.place_turret() {
+                self.action_cooldown = 0.3;
+            }
+        }
+
         // Interpolate farmer position
         let target = Self::grid_to_world(self.farmer.grid_x, self.farmer.grid_z);
         let to_target = target - self.farmer.position;
@@ -468,7 +498,7 @@ impl Game {
             }
         }
 
-        // Market Interaction Hotkeys: [E] Trade Potatoes -> Seeds, [T] Upgrade Turrets (150 Potatoes)
+        // Market Interaction Hotkeys: [E] Trade Potatoes -> Seeds, [T] Buy Turret (50 Potatoes)
         if self.near_market() && self.action_cooldown <= 0.0 {
             if is_key_pressed(KeyCode::E) {
                 self.convert_potatoes();
@@ -549,11 +579,13 @@ impl Game {
                         facing: 0.0,
                         anim_timer: rand::gen_range(0.0, 10.0),
                         harvesting_timer: 0.0,
+                        hp: 3.0,
+                        max_hp: 3.0,
                     });
                 }
 
                 if spawn_count > 0 && self.msg_timer <= 0.0 {
-                    self.set_msg("WARNING! Thief Children raiding your Potato Fields!");
+                    self.set_msg("WARNING! Tanky Thief Children raiding your Potato Fields!");
                 }
             }
         }
@@ -609,7 +641,7 @@ impl Game {
         self.children.retain(|c| c.alive && c.position.length() < 40.0);
 
         // --- AUTOMATED DEFENSE TURRETS ENGINE ---
-        if self.turrets_unlocked {
+        if !self.turrets.is_empty() {
             for turret in self.turrets.iter_mut() {
                 turret.fire_cooldown = (turret.fire_cooldown - dt).max(0.0);
 
@@ -653,7 +685,10 @@ impl Game {
                 // Check bullet collision with thief children
                 for child in self.children.iter_mut() {
                     if child.alive && bullet.position.distance(child.position + vec3(0.0, 0.6, 0.0)) < 0.8 {
-                        child.alive = false;
+                        child.hp -= 1.0;
+                        if child.hp <= 0.0 {
+                            child.alive = false;
+                        }
                         bullet.life = 0.0;
                         break;
                     }

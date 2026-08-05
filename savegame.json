@@ -1,7 +1,7 @@
 {
-  "seeds": 0,
-  "potatoes": 24,
-  "farmer_grid_x": 3,
+  "seeds": 121,
+  "potatoes": 4,
+  "farmer_grid_x": 11,
   "farmer_grid_z": 11,
   "field": [
     [
@@ -58,76 +58,10 @@
       "Grass",
       "Grass",
       "Grass",
-      "Plowed",
-      "Plowed",
-      "Plowed",
-      "Plowed",
-      "Plowed",
       "Grass",
       "Grass",
       "Grass",
       "Grass",
-      "Grass",
-      "Grass"
-    ],
-    [
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Plowed",
-      "Plowed",
-      "Plowed",
-      "Plowed",
-      "Plowed",
-      "Plowed",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass"
-    ],
-    [
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Plowed",
-      "Plowed",
-      "Plowed",
-      "Plowed",
-      "Plowed",
-      "Plowed",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass"
-    ],
-    [
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Plowed",
-      "Plowed",
-      "Plowed",
-      "Plowed",
       "Grass",
       "Grass",
       "Grass",
@@ -142,14 +76,42 @@
       "Grass",
       "Grass",
       "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 0.45394114
+        }
+      },
+      {
+        "Planted": {
+          "growth": 0.47265902
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
       "Plowed",
-      "Plowed",
-      "Plowed",
-      "Plowed",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
       "Plowed",
       "Grass",
       "Grass",
@@ -164,6 +126,526 @@
       "Grass",
       "Grass",
       "Grass",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      "Plowed",
+      {
+        "Planted": {
+          "growth": 0.6110929
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass"
+    ],
+    [
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      "Plowed",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 0.62878406
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass"
+    ],
+    [
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 0.3243862
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 0.79752463
+        }
+      },
+      "Plowed",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass"
+    ],
+    [
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      "Plowed",
+      {
+        "Planted": {
+          "growth": 0.37190235
+        }
+      },
+      {
+        "Planted": {
+          "growth": 0.3520411
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 0.8144792
+        }
+      },
+      {
+        "Planted": {
+          "growth": 0.75089467
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 0.68664235
+        }
+      },
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass"
+    ],
+    [
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      "Plowed",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 0.83150303
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      "Plowed",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass"
+    ],
+    [
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      "Plowed",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass"
+    ],
+    [
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 0.15234491
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 0.86995333
+        }
+      },
+      "Plowed",
+      "Plowed",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass"
+    ],
+    [
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      "Plowed",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass"
+    ],
+    [
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 0.8968183
+        }
+      },
+      "Plowed",
+      "Plowed",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass"
+    ],
+    [
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      "Plowed",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 0.93928075
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      "Plowed",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass"
+    ],
+    [
+      "Grass",
       "Grass",
       "Grass",
       "Grass",
@@ -171,228 +653,182 @@
       "Plowed",
       "Plowed",
       "Plowed",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 0.9739
+        }
+      },
       "Plowed",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass"
+    ],
+    [
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass"
+    ],
+    [
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
       "Plowed",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass"
-    ],
-    [
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
       "Plowed",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
       "Plowed",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass"
+    ],
+    [
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      "Grass",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
       "Plowed",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
       "Plowed",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass"
-    ],
-    [
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass"
-    ],
-    [
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass"
-    ],
-    [
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass"
-    ],
-    [
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass"
-    ],
-    [
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass"
-    ],
-    [
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass"
-    ],
-    [
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass"
-    ],
-    [
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass"
-    ],
-    [
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
-      "Grass",
+      {
+        "Planted": {
+          "growth": 1.0
+        }
+      },
+      "Plowed",
       "Grass",
       "Grass",
       "Grass",
@@ -444,5 +880,6 @@
       "Grass",
       "Grass"
     ]
-  ]
+  ],
+  "turrets_unlocked": true
 }
