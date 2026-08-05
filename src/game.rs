@@ -279,7 +279,7 @@ impl Game {
         if let Ok(json) = serde_json::to_string_pretty(&save_data) {
             if let Ok(mut file) = File::create(SAVE_FILE) {
                 if file.write_all(json.as_bytes()).is_ok() {
-                    self.set_msg("Game Saved to savegame.json!");
+                    self.set_msg("Game Saved!");
                     return;
                 }
             }
@@ -337,7 +337,7 @@ impl Game {
                             self.field[gx][gz] = CellState::from(*cell);
                         }
                     }
-                    self.set_msg("Game Loaded from savegame.json!");
+                    self.set_msg("Game Loaded from Saved File!");
                     return true;
                 }
             }
@@ -942,7 +942,7 @@ impl Game {
                 }
 
                 if spawn_count > 0 && self.msg_timer <= 0.0 {
-                    self.set_msg("WARNING! Tanky Thief Children raiding your Potato Fields!");
+                    self.set_msg("WARNING! Black Homeless Children raiding your Potato Fields!");
                 }
             }
         }
@@ -1036,7 +1036,7 @@ impl Game {
                     alive: true,
                 });
 
-                self.set_msg("NAVY ALERT! Cold War African Rebel GunBoat entering River!");
+                self.set_msg("NAVY ALERT! African Rebels GunBoats entering The River!");
             }
         }
     }
@@ -1511,7 +1511,7 @@ impl Game {
                 life: 2.0,
             });
 
-            self.set_msg("IRON DOME SHOT DOWN B-2 BOMBER! It is crashing onto the farm ground!");
+            self.set_msg("IRON DOME SHOT DOWN B-2 BOMBER! Crashing onto the ground!");
         }
         self.iron_dome_missiles.retain(|m| m.life > 0.0);
 

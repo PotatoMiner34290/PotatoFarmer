@@ -181,7 +181,7 @@ pub fn draw_thief_children(game: &Game) {
     let hair_dark = Color::from_rgba(25, 18, 12, 255);
     let shirt_red = Color::from_rgba(205, 55, 45, 255);
     let pants_blue = Color::from_rgba(45, 65, 110, 255);
-    let sack_brown = Color::from_rgba(165, 115, 60, 255);
+    let _sack_brown = Color::from_rgba(165, 115, 60, 255);
 
     for child in &game.children {
         if !child.alive {

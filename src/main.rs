@@ -7,7 +7,7 @@ mod render;
 use game::Game;
 use render::{draw_hud, draw_scene};
 
-#[macroquad::main("African Gun Runner Potato Farmer")]
+#[macroquad::main("African Gun Runners Farming Sim")]
 async fn main() {
     let mut game = Game::new();
 
