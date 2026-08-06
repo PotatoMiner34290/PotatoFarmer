@@ -314,10 +314,9 @@ impl Game {
     }
 
     pub fn load_game(&mut self) -> bool {
+        // Legacy plain-JSON fallback: if file is plain JSON, decrypt will fail and we use raw UTF8
         if let Ok(mut file) = File::open(SAVE_FILE) {
-            let mut bytes = Vec::new();
-            if file.read_to_string(&mut String::new()).is_ok() { /* keep for fallback */ }
-            // Re-open as bytes (read_to_string above consumed nothing relevant - redo as bytes)
+            // Re-open as bytes
             if let Ok(mut f2) = File::open(SAVE_FILE) {
                 use std::io::Read as _;
                 let mut buf = Vec::new();
@@ -426,7 +425,33 @@ impl Game {
         }
     }
 
+    pub fn world_to_grid(pos: Vec3) -> Option<(usize, usize)> {
+        let gx = ((pos.x + FIELD_HALF) / CELL).floor() as i32;
+        let gz = ((pos.z + FIELD_HALF) / CELL).floor() as i32;
+        if gx >= 0 && gx < GRID as i32 && gz >= 0 && gz < GRID as i32 {
+            Some((gx as usize, gz as usize))
+        } else {
+            None
+        }
+    }
+
+    pub fn is_occupied_by_structure(&self, gx: usize, gz: usize) -> bool {
+        let center = Self::cell_center(gx, gz);
+        let occupied = |p: Vec3| {
+            if let Some((ogx, ogz)) = Self::world_to_grid(p) {
+                ogx == gx && ogz == gz
+            } else {
+                // fallback distance check for off-grid placements (legacy)
+                p.distance(center) < CELL * 0.6
+            }
+        };
+        self.turrets.iter().any(|t| occupied(t.position)) || self.iron_domes.iter().any(|d| occupied(d.position))
+    }
+
     pub fn plow_cell(&mut self, gx: usize, gz: usize) {
+        if self.is_occupied_by_structure(gx, gz) {
+            return;
+        }
         if self.field[gx][gz] == CellState::Grass {
             self.field[gx][gz] = CellState::Plowed;
             self.spawn_dirt(Self::cell_center(gx, gz));
@@ -512,6 +537,21 @@ impl Game {
         }
 
         let place_pos = self.farmer.position;
+        // Must be on plowable soil (inside field grid)
+        let Some((gx, gz)) = Self::world_to_grid(place_pos) else {
+            self.set_msg("Iron Dome can only be placed on plowable soil inside the field!");
+            return false;
+        };
+        // Require plowed soil and not already occupied
+        if self.is_occupied_by_structure(gx, gz) {
+            self.set_msg("Cell already occupied by a structure!");
+            return false;
+        }
+        if self.field[gx][gz] != CellState::Plowed {
+            self.set_msg("Iron Dome can only be placed on plowed soil! Plow the cell first (hold Space).");
+            return false;
+        }
+
         if self.iron_domes.iter().any(|i| i.position.distance(place_pos) < 2.0) {
             self.set_msg("Too close to another Iron Dome!");
             return false;
@@ -522,14 +562,47 @@ impl Game {
             return false;
         }
 
+        // Remove plowed soil - structure occupies cell and it cannot be plowed while occupied
+        self.field[gx][gz] = CellState::Grass;
+        let snapped = Self::cell_center(gx, gz);
         self.iron_domes.push(IronDome {
-            position: place_pos,
+            position: snapped,
             cooldown: 0.0,
         });
         self.iron_domes_in_inventory -= 1;
-        self.spawn_sparkles(place_pos + vec3(0.0, 1.0, 0.0));
+        self.spawn_sparkles(snapped + vec3(0.0, 1.0, 0.0));
         self.set_msg(&format!("Iron Dome deployed! Auto-intercepting jet/gunboat missiles! (In hand: {})", self.iron_domes_in_inventory));
         true
+    }
+
+    pub fn pickup_iron_dome(&mut self) -> bool {
+        let pos = self.farmer.position;
+        if let Some(idx) = self.iron_domes.iter().position(|d| d.position.distance(pos) < 1.8) {
+            self.iron_domes.remove(idx);
+            self.iron_domes_in_inventory += 1;
+            self.set_msg(&format!("Picked up Iron Dome! Inventory: {}", self.iron_domes_in_inventory));
+            return true;
+        }
+        false
+    }
+
+    pub fn pickup_turret(&mut self) -> bool {
+        let pos = self.farmer.position;
+        if let Some(idx) = self.turrets.iter().position(|t| t.position.distance(pos) < 1.8) {
+            self.turrets.remove(idx);
+            self.turrets_in_inventory += 1;
+            self.set_msg(&format!("Picked up Turret! Inventory: {}", self.turrets_in_inventory));
+            return true;
+        }
+        false
+    }
+
+    pub fn try_pickup_structure(&mut self) -> bool {
+        // Prefer Iron Dome if both nearby, otherwise turret
+        if self.pickup_iron_dome() { return true; }
+        if self.pickup_turret() { return true; }
+        self.set_msg("No turret or Iron Dome nearby to pick up!");
+        false
     }
 
     pub fn place_turret(&mut self) -> bool {
@@ -684,7 +757,7 @@ impl Game {
 
         self.handle_movement_input();
 
-        // Hotkey [B] to place turret from inventory, [I] to deploy Iron Dome
+        // Hotkey [B] to place turret, [I] to deploy Iron Dome, [P] to pickup
         if self.action_cooldown <= 0.0 {
             if is_key_pressed(KeyCode::B) {
                 if self.place_turret() {
@@ -692,6 +765,10 @@ impl Game {
                 }
             } else if is_key_pressed(KeyCode::I) {
                 if self.place_iron_dome() {
+                    self.action_cooldown = 0.3;
+                }
+            } else if is_key_pressed(KeyCode::P) {
+                if self.try_pickup_structure() {
                     self.action_cooldown = 0.3;
                 }
             }
@@ -835,7 +912,7 @@ impl Game {
             slave.action_timer += dt;
 
             if slave.target_cell.is_none() || slave.action_timer > 3.0 {
-                // Find a cell in field needing action
+                // Find a cell needing action - only already-tilled (Plowed) or mature Planted, never Grass
                 let mut target = None;
                 for gx in 0..GRID {
                     for gz in 0..GRID {
@@ -845,10 +922,6 @@ impl Game {
                                 break;
                             }
                             CellState::Planted { growth } if growth >= 1.0 && self.ai_slave_mode == 0 => {
-                                target = Some((gx, gz));
-                                break;
-                            }
-                            CellState::Grass => {
                                 target = Some((gx, gz));
                                 break;
                             }
@@ -873,17 +946,13 @@ impl Game {
                     slave.facing = move_dir.x.atan2(move_dir.z);
                     slave.position += move_dir * (5.0 * dt);
                 } else {
-                    // Reached target cell - execute farming action based on mode
+                    // Reached target cell - only plant on already-tilled Plowed, harvest like player (1 potato)
                     match self.field[gx][gz] {
-                        CellState::Grass => {
-                            self.field[gx][gz] = CellState::Plowed;
-                        }
                         CellState::Plowed => {
                             if self.seeds > 0 {
                                 self.seeds -= 1;
                                 self.field[gx][gz] = CellState::Planted { growth: 0.0 };
                             } else {
-                                // Auto-convert potatoes to seeds if out
                                 if self.potatoes >= 1 {
                                     self.potatoes -= 1;
                                     self.seeds += POTATO_TO_SEED;
@@ -892,7 +961,7 @@ impl Game {
                         }
                         CellState::Planted { growth } if growth >= 1.0 && self.ai_slave_mode == 0 => {
                             self.field[gx][gz] = CellState::Plowed;
-                            self.potatoes += 3;
+                            self.potatoes += 1; // same as player harvest
                         }
                         _ => {}
                     }
@@ -1059,7 +1128,7 @@ impl Game {
                                 } else {
                                     child.steal_count += 1;
                                     if child.steal_count >= 3 {
-                                        self.field[gx][gz] = CellState::Grass;
+                                        self.field[gx][gz] = CellState::Plowed;
                                         child.has_stolen = true;
                                         child.fleeing = true;
                                         child.target_cell = None;

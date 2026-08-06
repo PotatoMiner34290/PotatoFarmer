@@ -1030,7 +1030,16 @@ pub fn draw_hud(game: &Game) {
             draw_text("=== DEDICATED MARKET & REVOLUTIONARY WORKER SHOP ===", box_x + 20.0, box_y + 26.0, 20.0, GOLD);
             let slave_mode_label = if game.ai_slave_mode == 0 { "Plant & Harvest" } else { "Plant Only" };
             
-            draw_text("[1] Sell Panther Statues ($2,500) | [2] Sell Blood Diamonds ($1,500) | [3] Sell Gold ($200)", box_x + 20.0, box_y + 55.0, 16.0, WHITE);
+            // Only show sell options for currencies already unlocked (hides locked shop items)
+            let mut row1_parts: Vec<&str> = Vec::new();
+            if game.has_unlocked_panther_statue { row1_parts.push("[1] Sell Panther Statues ($2,500)"); }
+            if game.has_unlocked_blood_diamonds { row1_parts.push("[2] Sell Blood Diamonds ($1,500)"); }
+            if game.has_unlocked_gold { row1_parts.push("[3] Sell Gold ($200)"); }
+            if !row1_parts.is_empty() {
+                draw_text(&row1_parts.join(" | "), box_x + 20.0, box_y + 55.0, 16.0, WHITE);
+            } else {
+                draw_text("No sellable loot unlocked yet - loot B-2 bomber drops to unlock!", box_x + 20.0, box_y + 55.0, 16.0, GRAY);
+            }
             draw_text("[4] Trade Potatoes->Seeds | [5] Buy AI Worker Slave (150 Pot / $500 Cash)", box_x + 20.0, box_y + 85.0, 16.0, SKYBLUE);
             draw_text(&format!("[6] Toggle AI Mode: Current [{}] | [7] Buy +100 Minigun Bullets ($300)", slave_mode_label), box_x + 20.0, box_y + 115.0, 16.0, YELLOW);
             draw_text(&format!("[T] Buy Defense Turret ({} Pot) | [Y] Buy Iron Dome ({} Pot)", TURRET_COST, IRON_DOME_COST), box_x + 20.0, box_y + 145.0, 16.0, GREEN);
