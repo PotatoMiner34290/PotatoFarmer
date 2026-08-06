@@ -849,11 +849,11 @@ impl Game {
                 if is_key_pressed(KeyCode::Key4) {
                     self.convert_potatoes();
                 }
-                // Key 5: Buy AI Worker Slave (150 Potatoes or $500 Cash)
+                // Key 5: Buy AI Worker Slave (1000 Potatoes or $500 Cash)
                 if is_key_pressed(KeyCode::Key5) {
-                    if self.potatoes >= 150 || self.cash >= 500 {
-                        if self.potatoes >= 150 {
-                            self.potatoes -= 150;
+                    if self.potatoes >= 1000 || self.cash >= 500 {
+                        if self.potatoes >= 1000 {
+                            self.potatoes -= 1000;
                         } else {
                             self.cash -= 500;
                         }
@@ -868,7 +868,7 @@ impl Game {
                         self.set_msg("Hired AI Farm Worker Slave! They will auto-plant & harvest!");
                         self.save_game();
                     } else {
-                        self.set_msg("Not enough Potatoes (150) or Cash ($500) to hire AI Slave!");
+                        self.set_msg("Not enough Potatoes (1000) or Cash ($500) to hire AI Slave!");
                     }
                 }
                 // Key 6: Toggle AI Slave Mode (Plant & Harvest vs Plant Only)

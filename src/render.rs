@@ -804,7 +804,7 @@ pub fn draw_hud(game: &Game) {
         let center_x = screen_width() / 2.0;
         let start_y = pad_y + 50.0;
 
-        draw_text("=== INVENTORY & CURRENCY MENU ===", center_x - 210.0, start_y, 24.0, GOLD);
+        draw_text("=== INVENTORY & SPECIAL LOOT MENU ===", center_x - 210.0, start_y, 24.0, GOLD);
 
         // Core Resources Row
         let mut cur_y = start_y + 40.0;
@@ -832,7 +832,7 @@ pub fn draw_hud(game: &Game) {
         draw_line(pad_x + 20.0, cur_y - 15.0, pad_x + menu_w - 20.0, cur_y - 15.0, 2.0, GRAY);
 
         // UNLOCKED B-2 BOMBER CURRENCIES & WEAPONS (Only shown after shot down & picked up!)
-        draw_text("SPECIAL LOOT & UNLOCKED CURRENCIES (Shot down from B-2 Bomber):", pad_x + 30.0, cur_y, 20.0, GOLD);
+        draw_text("SPECIAL LOOT (Shot down from B-2 Bomber):", pad_x + 30.0, cur_y, 20.0, GOLD);
         cur_y += 35.0;
 
         let icon_box_size = 50.0;
@@ -941,11 +941,11 @@ pub fn draw_hud(game: &Game) {
 
         if game.game_over {
             draw_text("STATUS: DIED (PERMANENT FAILURE)", pad_x + 30.0, cur_y + 10.0, 22.0, RED);
-            draw_text("Press [Y] -> Restart savegame to play again", pad_x + 30.0, cur_y + 40.0, 20.0, YELLOW);
+            draw_text("Press [Y] -> Restart to play again", pad_x + 30.0, cur_y + 40.0, 20.0, YELLOW);
         } else {
             draw_text(&format!("STATUS: ALIVE ({}/100 HP)", game.farmer.hp as u32), pad_x + 30.0, cur_y + 10.0, 20.0, GREEN);
             draw_text("Controls: [TAB] / [ESC] / [V] - Toggle Menu | Minigun Auto-Fires at Threats!", pad_x + 30.0, cur_y + 40.0, 18.0, LIGHTGRAY);
-            draw_text("Press [Y] -> Reset & Restart savegame", pad_x + 30.0, cur_y + 65.0, 16.0, YELLOW);
+            draw_text("Press [Y] -> Reset & Restart", pad_x + 30.0, cur_y + 65.0, 16.0, YELLOW);
         }
         return;
     }
@@ -960,7 +960,7 @@ pub fn draw_hud(game: &Game) {
         draw_rectangle_lines(go_x, go_y, go_w, go_h, 3.0, RED);
 
         draw_text("YOU DIED - PERMANENT FAILURE!", go_x + 60.0, go_y + 45.0, 26.0, RED);
-        draw_text("Press [ESC] to open menu and restart new savegame!", go_x + 35.0, go_y + 90.0, 20.0, GOLD);
+        draw_text("Press [ESC] to open menu and restart new game!", go_x + 35.0, go_y + 90.0, 20.0, GOLD);
         return;
     }
 
@@ -1027,7 +1027,7 @@ pub fn draw_hud(game: &Game) {
             draw_text("=== MARKET SHOP ENTERED ===", box_x + 20.0, box_y + 28.0, 20.0, GOLD);
             draw_text("Press [M] or [E] to Open Full Dedicated Market & Worker Menu!", box_x + 20.0, box_y + 58.0, 18.0, WHITE);
         } else {
-            draw_text("=== DEDICATED MARKET & REVOLUTIONARY WORKER SHOP ===", box_x + 20.0, box_y + 26.0, 20.0, GOLD);
+            draw_text("=== DEDICATED MARKET & RYAN'S AUCTION MARTS ===", box_x + 20.0, box_y + 26.0, 20.0, GOLD);
             let slave_mode_label = if game.ai_slave_mode == 0 { "Plant & Harvest" } else { "Plant Only" };
             
             // Only show sell options for currencies already unlocked (hides locked shop items)
@@ -1040,7 +1040,7 @@ pub fn draw_hud(game: &Game) {
             } else {
                 draw_text("No sellable loot unlocked yet - loot B-2 bomber drops to unlock!", box_x + 20.0, box_y + 55.0, 16.0, GRAY);
             }
-            draw_text("[4] Trade Potatoes->Seeds | [5] Buy AI Worker Slave (150 Pot / $500 Cash)", box_x + 20.0, box_y + 85.0, 16.0, SKYBLUE);
+            draw_text("[4] Trade Potatoes->Seeds | [5] Buy AI Worker Slave (1000 Pot / $500 Cash)", box_x + 20.0, box_y + 85.0, 16.0, SKYBLUE);
             draw_text(&format!("[6] Toggle AI Mode: Current [{}] | [7] Buy +100 Minigun Bullets ($300)", slave_mode_label), box_x + 20.0, box_y + 115.0, 16.0, YELLOW);
             draw_text(&format!("[T] Buy Defense Turret ({} Pot) | [Y] Buy Iron Dome ({} Pot)", TURRET_COST, IRON_DOME_COST), box_x + 20.0, box_y + 145.0, 16.0, GREEN);
             draw_text(&format!("Cash Balance: ${}  |  AI Slaves Hired: {}", game.cash, game.ai_slaves.len()), box_x + 20.0, box_y + 180.0, 18.0, GOLD);
