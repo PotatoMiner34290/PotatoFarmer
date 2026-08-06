@@ -1,5 +1,6 @@
 use macroquad::prelude::*;
 
+mod constants;
 mod types;
 mod game;
 mod render;

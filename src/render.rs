@@ -1,4 +1,5 @@
 use macroquad::prelude::*;
+use crate::constants::*;
 use crate::types::*;
 use crate::game::Game;
 

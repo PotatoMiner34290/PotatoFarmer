@@ -2,6 +2,7 @@ use macroquad::prelude::*;
 use std::fs::File;
 use std::io::{Read, Write};
 
+use crate::constants::*;
 use crate::types::*;
 
 pub struct Game {
@@ -59,6 +60,8 @@ pub struct Game {
     pub market_menu_open: bool,
     pub ai_slaves: Vec<AiSlave>,
     pub ai_slave_mode: u8, // 0 = Plant & Harvest, 1 = Plant Only
+    pub thief_choke_cooldown: f32,
+    pub choked_thief_name: String,
 }
 
 impl Game {
@@ -165,6 +168,8 @@ impl Game {
             market_menu_open: false,
             ai_slaves: Vec::new(),
             ai_slave_mode: 0,
+            thief_choke_cooldown: 0.0,
+            choked_thief_name: String::new(),
         };
 
         if std::path::Path::new(SAVE_FILE).exists() {
@@ -896,8 +901,37 @@ impl Game {
         }
         self.sparkles.retain(|s| s.life > 0.0);
 
+        // Choke cooldown tick
+        self.thief_choke_cooldown = (self.thief_choke_cooldown - dt).max(0.0);
+
+        // Choke/kill nearby thief ( press C / X / F when within 1.8 units )
+        if (is_key_pressed(KeyCode::C) || is_key_pressed(KeyCode::X) || is_key_pressed(KeyCode::F)) && self.thief_choke_cooldown <= 0.0 {
+            let farmer_pos = self.farmer.position;
+            if let Some(idx) = self.children.iter().position(|c| c.alive && c.position.distance(farmer_pos) < 1.8) {
+                let names = ["Jabari","Kofi","Amara","Zuri","Kwame","Ayo","Chike","Nia"];
+                let name = names[rand::gen_range(0, names.len())].to_string();
+                self.children[idx].alive = false;
+                self.thief_choke_cooldown = 60.0;
+                self.choked_thief_name = name.clone();
+                self.set_msg(&format!("Thief Raid: choked out {} will not spawn back for 1 minute", name));
+            } else if let Some(idx) = self.children.iter().position(|c| c.alive && c.position.distance(farmer_pos) < 3.0) {
+                // allow slightly further kill via message hint
+                let names = ["Jabari","Kofi","Amara","Zuri","Kwame","Ayo","Chike","Nia"];
+                let name = names[rand::gen_range(0, names.len())].to_string();
+                self.children[idx].alive = false;
+                self.thief_choke_cooldown = 60.0;
+                self.choked_thief_name = name.clone();
+                self.set_msg(&format!("Thief Raid: choked out {} will not spawn back for 1 minute", name));
+            }
+        }
+        self.children.retain(|c| c.alive);
+
         // --- THIEF CHILDREN EVENT ---
         // Children spawn whenever turrets are unlocked, OR if player has potatoes growing/harvested
+        // Blocked for 1 minute after a choke on that entity
+        if self.thief_choke_cooldown > 0.0 {
+            // skip spawning while that entity is choked
+        } else {
         let has_planted_crops = self.field.iter().any(|row| row.iter().any(|cell| matches!(cell, CellState::Planted { .. })));
         if self.turrets_unlocked || (has_planted_crops && (self.potatoes > 0 || self.seeds > 0)) || !self.children.is_empty() {
             self.steal_timer += dt;
@@ -906,25 +940,31 @@ impl Game {
             if self.steal_timer >= 6.0 {
                 self.steal_timer = 0.0;
 
-                // Find 5 random mature/planted potato fields to target
+                // Find 5 random fully-mature potato fields to target (growth >= 1.0) — ungrown potatoes ignored
                 let mut target_cells = Vec::new();
                 for gx in 0..GRID {
                     for gz in 0..GRID {
-                        if matches!(self.field[gx][gz], CellState::Planted { .. }) {
-                            target_cells.push((gx, gz));
+                        if let CellState::Planted { growth } = self.field[gx][gz] {
+                            if growth >= 1.0 {
+                                target_cells.push((gx, gz));
+                            }
                         }
                     }
                 }
 
-                // Spawn up to 5 thief children from perimeter village borders
+                // Spawn up to 5 thief children emerging from houses (never from markets)
                 let spawn_count = 5.min(target_cells.len());
+                // Filter houses that are not too close to markets (market = store, not home)
+                let house_spawns: Vec<Vec3> = self.houses.iter().filter(|h| {
+                    h.center.distance(WEST_MARKET_POS) > 4.5 && h.center.distance(EAST_MARKET_POS) > 4.5
+                }).map(|h| h.center + vec3(0.0, 0.0, 1.8)).collect();
                 for i in 0..spawn_count {
                     let (gx, gz) = target_cells[i];
-                    let spawn_pos = vec3(
-                        if i % 2 == 0 { -24.0 } else { 24.0 },
-                        0.0,
-                        if i < 2 { -24.0 } else { 24.0 },
-                    );
+                    let spawn_pos = if !house_spawns.is_empty() {
+                        house_spawns[rand::gen_range(0, house_spawns.len())] + vec3(rand::gen_range(-0.5,0.5), 0.0, rand::gen_range(-0.5,0.5))
+                    } else {
+                        vec3(if i % 2 == 0 { -24.0 } else { 24.0 }, 0.0, if i < 2 { -24.0 } else { 24.0 })
+                    };
 
                     self.children.push(ThiefChild {
                         position: spawn_pos,
@@ -938,6 +978,8 @@ impl Game {
                         hp: 3.0,
                         max_hp: 3.0,
                         has_stolen: false,
+                        flee_target: spawn_pos,
+                        steal_count: 0,
                     });
                 }
 
@@ -946,6 +988,8 @@ impl Game {
                 }
             }
         }
+        } // end choke block else
+
 
         // Update Thief Children AI with Harvesting & Running animations
         for child in self.children.iter_mut() {
@@ -957,62 +1001,68 @@ impl Game {
 
             if !child.fleeing {
                 if let Some((gx, gz)) = child.target_cell {
-                    let target_pos = Self::cell_center(gx, gz);
-                    let to_target = target_pos - child.position;
-                    let dist = to_target.length();
-
-                    if dist > 0.4 {
-                        let move_dir = to_target.normalize();
-                        child.facing = move_dir.x.atan2(move_dir.z);
-                        child.position += move_dir * (child.speed * dt);
+                    // If target is no longer fully mature (harvested by player, or despawned), abandon it
+                    let still_mature = matches!(self.field[gx][gz], CellState::Planted { growth } if growth >= 1.0);
+                    if !still_mature {
+                        child.target_cell = None;
+                        child.fleeing = true;
                     } else {
-                        // Reached potato field - Stop and Harvest the crop!
-                        child.harvesting_timer += dt;
-                        if child.harvesting_timer >= 1.2 {
-                            // Finish harvesting & start fleeing with stolen potatoes!
-                            child.fleeing = true;
-                            child.target_cell = None;
+                        let target_pos = Self::cell_center(gx, gz);
+                        let to_target = target_pos - child.position;
+                        let dist = to_target.length();
+
+                        if dist > 0.4 {
+                            let move_dir = to_target.normalize();
+                            child.facing = move_dir.x.atan2(move_dir.z);
+                            child.position += move_dir * (child.speed * dt);
+                        } else {
+                            // Steal takes longer: 2.5s per swipe, 3 swipes on same mature potato before it disappears
+                            child.harvesting_timer += dt;
+                            if child.harvesting_timer >= 2.5 {
+                                child.harvesting_timer = 0.0;
+                                // Re-check maturity at moment of swipe - ungrown potatoes are ignored
+                                let still_mature2 = matches!(self.field[gx][gz], CellState::Planted { growth } if growth >= 1.0);
+                                if !still_mature2 {
+                                    child.target_cell = None;
+                                    child.fleeing = true;
+                                } else {
+                                    child.steal_count += 1;
+                                    if child.steal_count >= 3 {
+                                        self.field[gx][gz] = CellState::Grass;
+                                        child.has_stolen = true;
+                                        child.fleeing = true;
+                                        child.target_cell = None;
+                                    }
+                                }
+                            }
                         }
                     }
                 } else {
                     child.fleeing = true;
                 }
             } else {
-                // Flee back towards village border carrying stolen potato sack
-                let flee_dir = (child.position - Vec3::ZERO).normalize();
-                child.facing = flee_dir.x.atan2(flee_dir.z);
-                child.position += flee_dir * (child.speed * dt);
-            }
-        }
-
-        // Apply crop steals once children start harvesting & track potato loss when they escape!
-        for child in self.children.iter_mut() {
-            if child.fleeing && child.alive {
-                if let Some((gx, gz)) = child.target_cell.take() {
-                    self.field[gx][gz] = CellState::Grass;
-                    child.has_stolen = true;
+                // Flee back into the house they came from
+                let to_home = child.flee_target - child.position;
+                let dist = to_home.length();
+                if dist > 0.3 {
+                    let dir = to_home.normalize();
+                    child.facing = dir.x.atan2(dir.z);
+                    child.position += dir * (child.speed * dt);
+                } else {
+                    child.position = child.flee_target;
                 }
             }
         }
 
-        // Deduct inventory potatoes if thief children escape off-map (distance > 38.0)
-        let mut escaped_stolen_count = 0;
+        // Thieves entering house despawn; inventory potatoes no longer deducted (plot loss is the penalty)
         for child in self.children.iter_mut() {
-            if child.alive && child.fleeing && child.position.length() >= 38.0 {
+            if child.alive && child.fleeing && child.position.distance(child.flee_target) < 0.5 {
                 child.alive = false;
-                if child.has_stolen {
-                    escaped_stolen_count += 1;
-                }
             }
         }
-        if escaped_stolen_count > 0 {
-            let lost = escaped_stolen_count * 2;
-            self.potatoes = self.potatoes.saturating_sub(lost);
-            self.set_msg(&format!("Thieves escaped with your crops! Lost {} Potatoes!", lost));
-        }
 
-        // Remove escaped or dead children
-        self.children.retain(|c| c.alive && c.position.length() < 40.0);
+        // Remove dead children (escaped into house already marked not alive)
+        self.children.retain(|c| c.alive);
 
         // --- AFRICAN REBEL GUNBOATS RIVER RAID EVENT ---
         // Spawn African Rebel gunboat raids twice as often as B-2 bomber (every 30s) if player has deployed turrets!
