@@ -5,69 +5,55 @@ on:
       - 'v*'
   workflow_dispatch:
 
+concurrency:
+  group: release
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build ${{ matrix.os }}-${{ matrix.target }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            binary: rice_farmer.exe
-            artifact: rice_farmer-windows-x86_64.exe
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            binary: rice_farmer
-            artifact: rice_farmer-linux-x86_64
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            binary: rice_farmer
-            artifact: rice_farmer-macos-x86_64
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            binary: rice_farmer
-            artifact: rice_farmer-macos-aarch64
-
+  build-windows:
+    name: Build windows-x86_64
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
-
+          targets: x86_64-pc-windows-msvc
       - uses: Swatinem/rust-cache@v2
-
-      - name: Build release
-        run: cargo build --release --target ${{ matrix.target }}
-
-      - name: Rename artifact (unix)
-        if: matrix.os != 'windows-latest'
-        run: cp target/${{ matrix.target }}/release/${{ matrix.binary }} ${{ matrix.artifact }}
-
-      - name: Rename artifact (windows)
-        if: matrix.os == 'windows-latest'
-        run: cp target/${{ matrix.target }}/release/${{ matrix.binary }} ${{ matrix.artifact }}
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - run: cargo build --release --target x86_64-pc-windows-msvc
+      - run: cp target/x86_64-pc-windows-msvc/release/rice_farmer.exe rice_farmer-windows-x86_64.exe
+      - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}
+          name: rice_farmer-windows-x86_64.exe
+          path: rice_farmer-windows-x86_64.exe
+
+  build-linux:
+    name: Build linux-x86_64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --target x86_64-unknown-linux-gnu
+      - run: cp target/x86_64-unknown-linux-gnu/release/rice_farmer rice_farmer-linux-x86_64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rice_farmer-linux-x86_64
+          path: rice_farmer-linux-x86_64
 
   release:
-    needs: build
+    needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-          merge-multiple: false
+          merge-multiple: true
 
       - name: Display artifacts
         run: ls -R artifacts
@@ -77,4 +63,3 @@ jobs:
         with:
           files: artifacts/**/*
           generate_release_notes: true
-
