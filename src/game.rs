@@ -60,8 +60,9 @@ pub struct Game {
     pub market_menu_open: bool,
     pub ai_slaves: Vec<AiSlave>,
     pub ai_slave_mode: u8, // 0 = Plant & Harvest, 1 = Plant Only
-    pub thief_choke_cooldown: f32,
-    pub choked_thief_name: String,
+    /// Per-house choke cooldowns — index matches valid house_spawns order.
+    /// When a thief from house N is choked, house_choke_cooldowns[N] is set to 60 s.
+    pub house_choke_cooldowns: Vec<f32>,
 }
 
 impl Game {
@@ -124,6 +125,7 @@ impl Game {
                 jet1_pos: Vec3::ZERO,
                 jet2_pos: Vec3::ZERO,
                 bullets: Vec::new(),
+                bomber_hp: 3,
             },
             houses,
             turrets_unlocked: false,
@@ -161,8 +163,7 @@ impl Game {
             market_menu_open: false,
             ai_slaves: Vec::new(),
             ai_slave_mode: 0,
-            thief_choke_cooldown: 0.0,
-            choked_thief_name: String::new(),
+            house_choke_cooldowns: Vec::new(),
         };
 
         if std::path::Path::new(SAVE_FILE).exists() {
@@ -916,7 +917,8 @@ impl Game {
         // Priority: harvest NEAREST mature crop first (to beat thieves), then plant.
         // Move speed 8.0 > thief speed 6.5 so slaves can intercept.
         // No work delay, no wander pause between jobs – slaves are always busy.
-        for slave in self.ai_slaves.iter_mut() {
+        for slave_idx in 0..self.ai_slaves.len() {
+            let slave = &mut self.ai_slaves[slave_idx];
             slave.anim_timer += dt * 4.0;
             slave.action_timer += dt;
 
@@ -984,13 +986,22 @@ impl Game {
                         slave.position += dir * (2.0 * dt);
                     }
 
-                    // ── Smart target search: pick the NEAREST cell needing work ──
+                    // ── Smart target search: pick the NEAREST unclaimed cell needing work ──
+                    // Snapshot cells claimed by all OTHER slaves (not this one) to spread out.
+                    let claimed: Vec<(usize, usize)> = self.ai_slaves.iter().enumerate()
+                        .filter(|(i, _)| *i != slave_idx)
+                        .filter_map(|(_, s)| s.target_cell)
+                        .collect();
+                    let slave = &mut self.ai_slaves[slave_idx];
+
                     let pos = slave.position;
                     let mut best_harvest: Option<(usize, usize, f32)> = None; // (gx, gz, dist_sq)
                     let mut best_plant:   Option<(usize, usize, f32)> = None;
 
                     for gx in 0..GRID {
                         for gz in 0..GRID {
+                            // Skip cells already targeted by another slave
+                            if claimed.contains(&(gx, gz)) { continue; }
                             let cp = Self::cell_center(gx, gz);
                             let dsq = (cp - pos).length_squared();
                             match self.field[gx][gz] {
@@ -1147,47 +1158,70 @@ impl Game {
         }
         self.sparkles.retain(|s| s.life > 0.0);
 
-        // Choke cooldown tick
-        self.thief_choke_cooldown = (self.thief_choke_cooldown - dt).max(0.0);
+        // Per-house choke cooldown tick
+        for cd in self.house_choke_cooldowns.iter_mut() {
+            *cd = (*cd - dt).max(0.0);
+        }
 
-        // Choke/kill nearby thief ( press C / X / F when within 1.8 units )
-        if (is_key_pressed(KeyCode::C) || is_key_pressed(KeyCode::X) || is_key_pressed(KeyCode::F)) && self.thief_choke_cooldown <= 0.0 {
+        // Choke/kill nearby thief ( press C / X when within 1.8 units ) — F is reserved for minigun shooting
+        // Only that thief's home house is blocked for 60 s; every other house keeps spawning.
+        if is_key_pressed(KeyCode::C) || is_key_pressed(KeyCode::X) {
             let farmer_pos = self.farmer.position;
-            if let Some(idx) = self.children.iter().position(|c| c.alive && c.position.distance(farmer_pos) < 1.8) {
+            // Build the valid house list the same way spawning does so indices match
+            let house_spawns: Vec<(usize, Vec3)> = self.houses.iter().enumerate()
+                .filter(|(_, h)| h.center.distance(WEST_MARKET_POS) > 4.5 && h.center.distance(EAST_MARKET_POS) > 4.5)
+                .map(|(i, h)| (i, h.center + vec3(0.0, 0.0, 1.8)))
+                .collect();
+
+            // Ensure cooldown vec is large enough
+            let house_count = self.houses.len();
+            if self.house_choke_cooldowns.len() < house_count {
+                self.house_choke_cooldowns.resize(house_count, 0.0);
+            }
+
+            let target_dist = if self.children.iter().any(|c| c.alive && c.position.distance(farmer_pos) < 1.8) { 1.8 } else { 3.0 };
+            if let Some(child_idx) = self.children.iter().position(|c| c.alive && c.position.distance(farmer_pos) < target_dist) {
                 let names = ["Jabari","Kofi","Amara","Zuri","Kwame","Ayo","Chike","Nia"];
                 let name = names[rand::gen_range(0, names.len())].to_string();
-                self.children[idx].alive = false;
-                self.thief_choke_cooldown = 60.0;
-                self.choked_thief_name = name.clone();
-                self.set_msg(&format!("Thief Raid: choked out {} will not spawn back for 1 minute", name));
-            } else if let Some(idx) = self.children.iter().position(|c| c.alive && c.position.distance(farmer_pos) < 3.0) {
-                // allow slightly further kill via message hint
-                let names = ["Jabari","Kofi","Amara","Zuri","Kwame","Ayo","Chike","Nia"];
-                let name = names[rand::gen_range(0, names.len())].to_string();
-                self.children[idx].alive = false;
-                self.thief_choke_cooldown = 60.0;
-                self.choked_thief_name = name.clone();
-                self.set_msg(&format!("Thief Raid: choked out {} will not spawn back for 1 minute", name));
+                // Find which house this child came from
+                let house_idx = self.children[child_idx].spawn_house_idx;
+                self.children[child_idx].alive = false;
+                // Block only that specific house
+                if let Some(hi) = house_idx {
+                    if hi < self.house_choke_cooldowns.len() {
+                        self.house_choke_cooldowns[hi] = 60.0;
+                        self.set_msg(&format!("Choked out {} — House #{} blocked for 1 min. Others still active!", name, hi + 1));
+                    } else {
+                        self.set_msg(&format!("Choked out {} — they won't be back for 1 minute!", name));
+                    }
+                } else {
+                    // No tracked house (edge case) — pick the nearest available house and block it
+                    if let Some(&(hi, _)) = house_spawns.iter().min_by(|a, b| {
+                        let da = a.1.distance(self.children[child_idx].position);
+                        let db = b.1.distance(self.children[child_idx].position);
+                        da.partial_cmp(&db).unwrap()
+                    }) {
+                        self.house_choke_cooldowns[hi] = 60.0;
+                    }
+                    self.set_msg(&format!("Choked out {} — they won't be back for 1 minute!", name));
+                }
             }
         }
         self.children.retain(|c| c.alive);
 
         // --- THIEF CHILDREN EVENT ---
-        // Children spawn whenever turrets are unlocked, OR if player has potatoes growing/harvested
-        // Blocked for 1 minute after a choke on that entity
-        if self.thief_choke_cooldown > 0.0 {
-            // skip spawning while that entity is choked
-        } else {
-        let has_planted_crops = self.field.iter().any(|row| row.iter().any(|cell| matches!(cell, CellState::Planted { .. })));
-        if self.turrets_unlocked || (has_planted_crops && (self.potatoes > 0 || self.seeds > 0)) || !self.children.is_empty() {
+        // Children spawn only when there are actual mature crops or turrets to raid.
+        // Each house has its own individual choke cooldown; only the choked house is blocked.
+        // NOTE: !self.children.is_empty() is intentionally NOT included — that caused infinite spawning.
+        let has_mature_crops = self.field.iter().any(|row| row.iter().any(|cell| matches!(cell, CellState::Planted { growth } if *growth >= 1.0)));
+        if self.turrets_unlocked || has_mature_crops {
             self.steal_timer += dt;
 
-            // Every 6 seconds, spawn a group of thief children to raid 5 potato fields
             if self.steal_timer >= 6.0 {
                 self.steal_timer = 0.0;
 
-                // Find 5 random fully-mature potato fields to target (growth >= 1.0) — ungrown potatoes ignored
-                let mut target_cells = Vec::new();
+                // Collect all fully-mature potato fields
+                let mut target_cells: Vec<(usize, usize)> = Vec::new();
                 for gx in 0..GRID {
                     for gz in 0..GRID {
                         if let CellState::Planted { growth } = self.field[gx][gz] {
@@ -1198,43 +1232,84 @@ impl Game {
                     }
                 }
 
-                // Spawn up to 5 thief children emerging from houses (never from markets)
-                let spawn_count = 5.min(target_cells.len());
-                // Filter houses that are not too close to markets (market = store, not home)
-                let house_spawns: Vec<Vec3> = self.houses.iter().filter(|h| {
-                    h.center.distance(WEST_MARKET_POS) > 4.5 && h.center.distance(EAST_MARKET_POS) > 4.5
-                }).map(|h| h.center + vec3(0.0, 0.0, 1.8)).collect();
-                for i in 0..spawn_count {
-                    let (gx, gz) = target_cells[i];
-                    let spawn_pos = if !house_spawns.is_empty() {
-                        house_spawns[rand::gen_range(0, house_spawns.len())] + vec3(rand::gen_range(-0.5,0.5), 0.0, rand::gen_range(-0.5,0.5))
-                    } else {
-                        vec3(if i % 2 == 0 { -24.0 } else { 24.0 }, 0.0, if i < 2 { -24.0 } else { 24.0 })
-                    };
+                if target_cells.is_empty() {
+                    // Nothing to steal this wave
+                } else {
+                    // Build available (not choked) house spawn list with their original indices
+                    let house_count = self.houses.len();
+                    if self.house_choke_cooldowns.len() < house_count {
+                        self.house_choke_cooldowns.resize(house_count, 0.0);
+                    }
+                    let available_houses: Vec<(usize, Vec3)> = self.houses.iter().enumerate()
+                        .filter(|(i, h)| {
+                            h.center.distance(WEST_MARKET_POS) > 4.5
+                                && h.center.distance(EAST_MARKET_POS) > 4.5
+                                && self.house_choke_cooldowns[*i] <= 0.0
+                        })
+                        .map(|(i, h)| (i, h.center + vec3(0.0, 0.0, 1.8)))
+                        .collect();
 
-                    self.children.push(ThiefChild {
-                        position: spawn_pos,
-                        target_cell: Some((gx, gz)),
-                        speed: 6.5,
-                        fleeing: false,
-                        alive: true,
-                        facing: 0.0,
-                        anim_timer: rand::gen_range(0.0, 10.0),
-                        harvesting_timer: 0.0,
-                        hp: 3.0,
-                        max_hp: 3.0,
-                        has_stolen: false,
-                        flee_target: spawn_pos,
-                        steal_count: 0,
-                    });
-                }
+                    // Track which crop cells are already claimed this wave so thieves spread out
+                    let mut claimed_cells: Vec<(usize, usize)> = Vec::new();
 
-                if spawn_count > 0 && self.msg_timer <= 0.0 {
-                    self.set_msg("WARNING! Black Homeless Children raiding your Potato Fields!");
+                    let spawn_count = 5.min(available_houses.len().max(1)); // cap at 5, but only if a house is available
+                    let mut spawned = 0;
+
+                    for i in 0..spawn_count {
+                        // Pick the spawn house (or fallback edge)
+                        let (spawn_house_idx, spawn_pos) = if !available_houses.is_empty() {
+                            let pick = i % available_houses.len();
+                            let (hi, base) = available_houses[pick];
+                            (Some(hi), base + vec3(rand::gen_range(-0.5_f32, 0.5_f32), 0.0, rand::gen_range(-0.5_f32, 0.5_f32)))
+                        } else {
+                            // All houses choked — no spawn this wave
+                            break;
+                        };
+
+                        // Each thief targets the NEAREST unclaimed mature crop to their spawn point
+                        // so thieves spread across the field rather than all piling on cell [0]
+                        let best_cell = target_cells.iter()
+                            .filter(|&&c| !claimed_cells.contains(&c))
+                            .min_by(|&&a, &&b| {
+                                let pa = Self::cell_center(a.0, a.1);
+                                let pb = Self::cell_center(b.0, b.1);
+                                let da = (pa - spawn_pos).length_squared();
+                                let db = (pb - spawn_pos).length_squared();
+                                da.partial_cmp(&db).unwrap()
+                            })
+                            .copied();
+
+                        let Some(target_cell) = best_cell else { break; };
+                        claimed_cells.push(target_cell);
+
+                        self.children.push(ThiefChild {
+                            position: spawn_pos,
+                            target_cell: Some(target_cell),
+                            speed: 6.5,
+                            fleeing: false,
+                            alive: true,
+                            facing: 0.0,
+                            anim_timer: rand::gen_range(0.0, 10.0),
+                            harvesting_timer: 0.0,
+                            hp: 3.0,
+                            max_hp: 3.0,
+                            has_stolen: false,
+                            flee_target: spawn_pos,
+                            steal_count: 0,
+                            spawn_house_idx,
+                        });
+                        spawned += 1;
+                    }
+
+                    if spawned > 0 && self.msg_timer <= 0.0 {
+                        self.set_msg("WARNING! Black Homeless Children raiding your Potato Fields!");
+                    }
                 }
             }
+        } else {
+            // No mature crops and no turrets — reset timer so we don't get a burst when crops ripen
+            self.steal_timer = 0.0;
         }
-        } // end choke block else
 
 
         // Update Thief Children AI with Harvesting & Running animations
@@ -1535,12 +1610,12 @@ impl Game {
             self.turret_bullets.retain(|b| b.life > 0.0);
         }
 
-        // Automated & Manual Heavy Minigun Firing (Auto-targets Rebels, Gunboats & Thief Children!)
+        // Automated & Manual Heavy Minigun Firing (Auto-targets Rebels & Gunboats only)
         self.minigun_cooldown = (self.minigun_cooldown - dt).max(0.0);
         if self.minigun_unlocked && self.bullets_count > 0 && self.minigun_cooldown <= 0.0 {
             let f_pos = self.farmer.position + vec3(0.0, 0.8, 0.0);
 
-            // Auto-Target Priority: Rebels > Gunboats > Thief Children
+            // Auto-Target Priority: Rebels > Gunboats (Thief Children are NOT auto-targeted)
             let mut target_found = None;
             for rebel in self.rebels.iter() {
                 if rebel.alive && f_pos.distance(rebel.position) < 28.0 {
@@ -1552,14 +1627,6 @@ impl Game {
                 for boat in self.gunboats.iter() {
                     if boat.alive && f_pos.distance(boat.position) < 32.0 {
                         target_found = Some(boat.position + vec3(0.0, 0.8, 0.0));
-                        break;
-                    }
-                }
-            }
-            if target_found.is_none() {
-                for child in self.children.iter() {
-                    if child.alive && f_pos.distance(child.position) < 25.0 {
-                        target_found = Some(child.position + vec3(0.0, 0.6, 0.0));
                         break;
                     }
                 }
@@ -1772,7 +1839,7 @@ impl Game {
                         speed: 75.0,
                         life: 2.5,
                     });
-                    dome.cooldown = 1.2;
+                    dome.cooldown = 0.3;
                 }
             }
         }
@@ -1791,23 +1858,30 @@ impl Game {
             }
         }
         if let Some(pos) = intercept_data {
-            self.air_event.active = false; // Intercepted!
             self.spawn_sparkles(pos);
-            
-            // Clamp crash landing target safely within open farm field bounds (avoiding river & surrounding houses)
-            let safe_x = pos.x.clamp(-20.0, 18.0);
-            let safe_z = pos.z.clamp(-15.0, 15.0);
+            if self.air_event.bomber_hp > 0 {
+                self.air_event.bomber_hp -= 1;
+            }
+            if self.air_event.bomber_hp == 0 {
+                self.air_event.active = false; // Bomber destroyed!
 
-            // Trigger B2 Bomber crash trajectory landing safely on open farm ground!
-            self.crashing_bombers.push(CrashingBomber {
-                position: vec3(safe_x, pos.y, safe_z),
-                velocity: vec3(0.0, -14.0, 0.0),
-                rotation: 0.0,
-                rot_speed: rand::gen_range(3.0, 8.0),
-                life: 2.0,
-            });
+                // Clamp crash landing target safely within open farm field bounds
+                let safe_x = pos.x.clamp(-20.0, 18.0);
+                let safe_z = pos.z.clamp(-15.0, 15.0);
 
-            self.set_msg("IRON DOME SHOT DOWN B-2 BOMBER! Crashing onto the ground!");
+                // Trigger B2 Bomber crash — slow tumbling fall
+                self.crashing_bombers.push(CrashingBomber {
+                    position: vec3(safe_x, pos.y, safe_z),
+                    velocity: vec3(0.0, -4.5, 0.0),
+                    rotation: 0.0,
+                    rot_speed: rand::gen_range(1.5, 3.5),
+                    life: 2.0,
+                });
+
+                self.set_msg("B-2 BOMBER DESTROYED! Watch it crash slowly onto the ground!");
+            } else {
+                self.set_msg(&format!("B-2 BOMBER HIT! {} hits remaining before it goes down!", self.air_event.bomber_hp));
+            }
         }
         self.iron_dome_missiles.retain(|m| m.life > 0.0);
 
@@ -1817,6 +1891,7 @@ impl Game {
             self.air_event.timer = 0.0;
             self.air_event.active = true;
             self.air_event.fly_time = 0.0;
+            self.air_event.bomber_hp = 3; // Reset to full HP for each new raid
             self.set_msg("AIR RAID INCOMING! B-2 Stealth Bomber & Fighter Jets Overhead!");
         }
 
