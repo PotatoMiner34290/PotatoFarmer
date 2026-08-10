@@ -3,15 +3,18 @@ use macroquad::audio::{load_sound, play_sound, play_sound_once, Sound, PlaySound
 /// Sound effects and music. Each slot maps 1-to-1 with a file in `sounds/`.
 /// See `sounds/README.md` for the full reference table.
 ///
-/// | Filename                    | Plays when…                              | Notes             |
-/// |-----------------------------|------------------------------------------|-------------------|
-/// | `music.mp3`                 | Game starts                              | **Loops forever** |
-/// | `turret_fire.mp3`           | A turret fires a bullet                  |                   |
-/// | `jet_flyby.mp3`             | A jet flies over the field               |                   |
-/// | `jet_shoot.mp3`             | A jet fires at the player                |                   |
-/// | `iron_dome_intercept.mp3`   | An Iron Dome missile intercepts a rocket |                   |
-/// | `boat_engine.mp3`           | A gunboat is active                      | Loops             |
-/// | `thief_giggle.mp3`          | A thief child steals a potato            |                   |
+/// Supported formats: OGG Vorbis (.ogg), WAV (.wav), FLAC (.flac)
+/// ⚠ MP3 is NOT supported by macroquad's audio backend — convert to OGG first.
+///
+/// | Filename (any of .ogg / .wav / .flac) | Plays when…                              | Notes             |
+/// |---------------------------------------|------------------------------------------|-------------------|
+/// | `music`                               | Game starts                              | **Loops forever** |
+/// | `turret_fire`                         | A turret fires a bullet                  |                   |
+/// | `jet_flyby`                           | A jet flies over the field               |                   |
+/// | `jet_shoot`                           | A jet fires at the player                |                   |
+/// | `iron_dome_intercept`                 | An Iron Dome missile intercepts a rocket |                   |
+/// | `boat_engine`                         | A gunboat is active                      | Loops             |
+/// | `thief_giggle`                        | A thief child steals a potato            |                   |
 pub struct SoundEffects {
     pub music:               Option<Sound>,
     pub turret_fire:         Option<Sound>,
@@ -38,16 +41,18 @@ impl SoundEffects {
 
     /// Loads every sound from the `sounds/` folder, then immediately starts
     /// looping the background music track (if present).
-    /// Missing files are silently ignored — the slot stays `None`.
+    ///
+    /// Each slot tries `.ogg` → `.wav` → `.flac` in order — whichever file
+    /// exists first wins. Missing / unsupported files are silently skipped.
     pub async fn load() -> Self {
         let sfx = Self {
-            music:               try_load("sounds/music.mp3").await,
-            turret_fire:         try_load("sounds/turret_fire.mp3").await,
-            jet_flyby:           try_load("sounds/jet_flyby.mp3").await,
-            jet_shoot:           try_load("sounds/jet_shoot.mp3").await,
-            iron_dome_intercept: try_load("sounds/iron_dome_intercept.mp3").await,
-            boat_engine:         try_load("sounds/boat_engine.mp3").await,
-            thief_giggle:        try_load("sounds/thief_giggle.mp3").await,
+            music:               try_load("sounds/music").await,
+            turret_fire:         try_load("sounds/turret_fire").await,
+            jet_flyby:           try_load("sounds/jet_flyby").await,
+            jet_shoot:           try_load("sounds/jet_shoot").await,
+            iron_dome_intercept: try_load("sounds/iron_dome_intercept").await,
+            boat_engine:         try_load("sounds/boat_engine").await,
+            thief_giggle:        try_load("sounds/thief_giggle").await,
         };
 
         // Start background music immediately, looped at 80% volume.
@@ -85,11 +90,20 @@ impl SoundEffects {
     pub fn play_thief_giggle(&self)        { Self::play_once(&self.thief_giggle); }
 }
 
-// ── Internal helper ─────────────────────────────────────────────────────────
+// ── Internal helpers ─────────────────────────────────────────────────────────
 
-async fn try_load(path: &str) -> Option<Sound> {
-    match load_sound(path).await {
-        Ok(s)  => Some(s),
-        Err(_) => None,   // file missing or unsupported — silently skip
+/// Try to load `base.ogg`, then `base.wav`, then `base.flac`.
+/// Returns the first one that succeeds, or `None` if none exist / are readable.
+/// MP3 is intentionally excluded — quad-snd panics on it (UnsupportedFormat).
+async fn try_load(base: &str) -> Option<Sound> {
+    for ext in &["ogg", "wav", "flac"] {
+        let path = format!("{}.{}", base, ext);
+        if std::path::Path::new(&path).exists() {
+            match load_sound(&path).await {
+                Ok(s)  => return Some(s),
+                Err(e) => eprintln!("[audio] failed to decode {}: {:?}", path, e),
+            }
+        }
     }
+    None
 }
