@@ -983,10 +983,19 @@ pub fn draw_hud(game: &Game) {
     draw_text("E - Plant/Harvest | [B] Place Turret | [I] Deploy Iron Dome", 20.0, 114.0, 18.0, WHITE);
     draw_text("F5 / K - Save Game   |   F9 / L - Load Game", 20.0, 136.0, 18.0, SKYBLUE);
 
-    let inv_text = format!(
-        "Seeds: {}  Potatoes: {}  Slaves: {}  Turrets: {}  IronDomes: {}",
-        game.seeds, game.potatoes, game.ai_slaves.len(), game.turrets_in_inventory, game.iron_domes_in_inventory
-    );
+    let waiting_count = game.ai_slaves.iter().filter(|s| s.state == AiState::WaitingForSeeds).count();
+    let inv_text = if waiting_count > 0 {
+        format!(
+            "Seeds: {}  Potatoes: {}  Slaves: {} ({} waiting for seeds)  Turrets: {}  IronDomes: {}",
+            game.seeds, game.potatoes, game.ai_slaves.len(), waiting_count,
+            game.turrets_in_inventory, game.iron_domes_in_inventory
+        )
+    } else {
+        format!(
+            "Seeds: {}  Potatoes: {}  Slaves: {}  Turrets: {}  IronDomes: {}",
+            game.seeds, game.potatoes, game.ai_slaves.len(), game.turrets_in_inventory, game.iron_domes_in_inventory
+        )
+    };
     draw_text(&inv_text, 20.0, 168.0, 20.0, YELLOW);
 
     let is_in_field = game.farmer.grid_x >= 0 && game.farmer.grid_x < GRID as i32 &&

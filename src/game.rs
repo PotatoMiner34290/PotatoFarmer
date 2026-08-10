@@ -347,13 +347,21 @@ impl Game {
                     self.has_unlocked_minigun = data.has_unlocked_minigun;
                     self.ai_slave_mode = data.ai_slave_mode;
                     self.ai_slaves.clear();
-                    for i in 0..data.ai_slaves_count {
+                    for _ in 0..data.ai_slaves_count {
+                        let spawn_x = rand::gen_range(0, GRID);
+                        let spawn_z = rand::gen_range(0, GRID);
+                        let spawn_pos = Self::cell_center(spawn_x, spawn_z);
                         self.ai_slaves.push(AiSlave {
-                            position: Self::cell_center(i as usize % GRID, (i as usize * 3) % GRID),
-                            target_cell: None,
-                            action_timer: 0.0,
-                            anim_timer: rand::gen_range(0.0, 10.0),
-                            facing: 0.0,
+                            position:      spawn_pos,
+                            target_cell:   None,
+                            action_timer:  0.0,
+                            anim_timer:    rand::gen_range(0.0_f32, 10.0_f32),
+                            facing:        rand::gen_range(0.0_f32, std::f32::consts::TAU),
+                            state:         AiState::Wandering,
+                            wander_target: spawn_pos,
+                            wander_timer:  rand::gen_range(0.0_f32, 2.0_f32),
+                            rng_offset:    rand::gen_range(0_usize, GRID * GRID),
+                            wait_timer:    0.0,
                         });
                     }
                     self.turrets.clear();
@@ -735,7 +743,7 @@ impl Game {
                 let _ = std::fs::remove_file(SAVE_FILE);
                 *self = Game::new();
                 self.save_game();
-                self.set_msg("Restarted game and initialized new savegame!");
+                self.set_msg("Restarted game and initialized new save!");
             }
             return;
         }
@@ -859,11 +867,16 @@ impl Game {
                         }
                         let spawn_pos = Self::cell_center(rand::gen_range(0, GRID), rand::gen_range(0, GRID));
                         self.ai_slaves.push(AiSlave {
-                            position: spawn_pos,
-                            target_cell: None,
-                            action_timer: 0.0,
-                            anim_timer: rand::gen_range(0.0, 10.0),
-                            facing: 0.0,
+                            position:      spawn_pos,
+                            target_cell:   None,
+                            action_timer:  0.0,
+                            anim_timer:    rand::gen_range(0.0_f32, 10.0_f32),
+                            facing:        rand::gen_range(0.0_f32, std::f32::consts::TAU),
+                            state:         AiState::Wandering,
+                            wander_target: spawn_pos,
+                            wander_timer:  rand::gen_range(0.0_f32, 2.0_f32),
+                            rng_offset:    rand::gen_range(0_usize, GRID * GRID),
+                            wait_timer:    0.0,
                         });
                         self.set_msg("Hired AI Farm Worker Slave! They will auto-plant & harvest!");
                         self.save_game();
@@ -906,69 +919,209 @@ impl Game {
             self.market_menu_open = false;
         }
 
-        // --- UPDATE AI FARMER SLAVES (Auto-Planting & Auto-Harvesting) ---
+        // --- UPDATE AI FARMER SLAVES (Smart State-Machine AI) ---
+        // Priority: harvest NEAREST mature crop first (to beat thieves), then plant.
+        // Move speed 8.0 > thief speed 6.5 so slaves can intercept.
+        // No work delay, no wander pause between jobs – slaves are always busy.
         for slave in self.ai_slaves.iter_mut() {
-            slave.anim_timer += dt * 6.0;
+            slave.anim_timer += dt * 4.0;
             slave.action_timer += dt;
 
-            if slave.target_cell.is_none() || slave.action_timer > 3.0 {
-                // Find a cell needing action - only already-tilled (Plowed) or mature Planted, never Grass
-                let mut target = None;
-                for gx in 0..GRID {
-                    for gz in 0..GRID {
-                        match self.field[gx][gz] {
-                            CellState::Plowed => {
-                                target = Some((gx, gz));
-                                break;
-                            }
-                            CellState::Planted { growth } if growth >= 1.0 && self.ai_slave_mode == 0 => {
-                                target = Some((gx, gz));
-                                break;
-                            }
-                            _ => {}
-                        }
+            // Helper closure: find the nearest harvestable cell to a position.
+            // Returns (gx, gz, dist_sq). Used both in Wandering and MovingToTarget.
+            // We inline it here since closures can't borrow self mutably while slave is borrowed.
+
+            match slave.state.clone() {
+                // ── WAITING FOR SEEDS ──────────────────────────────────────────────
+                AiState::WaitingForSeeds => {
+                    slave.wait_timer += dt;
+                    // Light aimless drift so they don't freeze solid
+                    slave.wander_timer -= dt;
+                    if slave.wander_timer <= 0.0 {
+                        let rx = slave.position.x + rand::gen_range(-5.0_f32, 5.0_f32);
+                        let rz = slave.position.z + rand::gen_range(-5.0_f32, 5.0_f32);
+                        slave.wander_target = vec3(
+                            rx.clamp(-(GRID as f32), GRID as f32),
+                            0.0,
+                            rz.clamp(-(GRID as f32), GRID as f32),
+                        );
+                        slave.wander_timer = rand::gen_range(1.2_f32, 2.5_f32);
                     }
-                    if target.is_some() {
-                        break;
+                    let to_w = slave.wander_target - slave.position;
+                    if to_w.length() > 0.4 {
+                        let dir = to_w.normalize();
+                        slave.facing = dir.x.atan2(dir.z);
+                        slave.position += dir * (1.5 * dt);
+                    }
+                    // Re-check often (every 0.2s) so slaves snap back to work quickly
+                    if slave.wait_timer > 0.5 {
+                        slave.wait_timer = 0.0;
+                        let can_harvest = self.ai_slave_mode == 0 && self.field.iter().any(|row| {
+                            row.iter().any(|c| matches!(c, CellState::Planted { growth } if *growth >= 1.0))
+                        });
+                        let can_plant = self.seeds > 0 && self.field.iter().any(|row| {
+                            row.iter().any(|c| matches!(c, CellState::Plowed))
+                        });
+                        if can_harvest || can_plant {
+                            slave.state = AiState::Wandering;
+                        }
                     }
                 }
-                slave.target_cell = target;
-                slave.action_timer = 0.0;
-            }
 
-            if let Some((gx, gz)) = slave.target_cell {
-                let cell_pos = Self::cell_center(gx, gz);
-                let to_cell = cell_pos - slave.position;
-                let dist = to_cell.length();
+                // ── WANDERING / TARGET SEARCH ──────────────────────────────────────
+                // Slaves do a quick scan every tick. The moment they find a target they
+                // commit to it immediately – no wander delay between jobs.
+                AiState::Wandering => {
+                    // Light drift while between jobs (keeps them spread out)
+                    slave.wander_timer -= dt;
+                    if slave.wander_timer <= 0.0 {
+                        let rx = slave.position.x + rand::gen_range(-6.0_f32, 6.0_f32);
+                        let rz = slave.position.z + rand::gen_range(-6.0_f32, 6.0_f32);
+                        slave.wander_target = vec3(
+                            rx.clamp(-(GRID as f32), GRID as f32),
+                            0.0,
+                            rz.clamp(-(GRID as f32), GRID as f32),
+                        );
+                        slave.wander_timer = rand::gen_range(0.5_f32, 1.5_f32);
+                    }
+                    let to_w = slave.wander_target - slave.position;
+                    if to_w.length() > 0.4 {
+                        let dir = to_w.normalize();
+                        slave.facing = dir.x.atan2(dir.z);
+                        slave.position += dir * (2.0 * dt);
+                    }
 
-                if dist > 0.3 {
-                    let move_dir = to_cell.normalize();
-                    slave.facing = move_dir.x.atan2(move_dir.z);
-                    slave.position += move_dir * (5.0 * dt);
-                } else {
-                    // Reached target cell - only plant on already-tilled Plowed, harvest like player (1 potato)
-                    match self.field[gx][gz] {
-                        CellState::Plowed => {
-                            if self.seeds > 0 {
-                                self.seeds -= 1;
-                                self.field[gx][gz] = CellState::Planted { growth: 0.0 };
-                            } else {
-                                if self.potatoes >= 1 {
-                                    self.potatoes -= 1;
-                                    self.seeds += POTATO_TO_SEED;
+                    // ── Smart target search: pick the NEAREST cell needing work ──
+                    let pos = slave.position;
+                    let mut best_harvest: Option<(usize, usize, f32)> = None; // (gx, gz, dist_sq)
+                    let mut best_plant:   Option<(usize, usize, f32)> = None;
+
+                    for gx in 0..GRID {
+                        for gz in 0..GRID {
+                            let cp = Self::cell_center(gx, gz);
+                            let dsq = (cp - pos).length_squared();
+                            match self.field[gx][gz] {
+                                CellState::Planted { growth } if growth >= 1.0 && self.ai_slave_mode == 0 => {
+                                    if best_harvest.map_or(true, |(_, _, d)| dsq < d) {
+                                        best_harvest = Some((gx, gz, dsq));
+                                    }
                                 }
+                                CellState::Plowed if self.seeds > 0 => {
+                                    if best_plant.map_or(true, |(_, _, d)| dsq < d) {
+                                        best_plant = Some((gx, gz, dsq));
+                                    }
+                                }
+                                _ => {}
                             }
                         }
-                        CellState::Planted { growth } if growth >= 1.0 && self.ai_slave_mode == 0 => {
-                            self.field[gx][gz] = CellState::Plowed;
-                            self.potatoes += 1; // same as player harvest
-                        }
-                        _ => {}
                     }
-                    slave.target_cell = None;
+
+                    // Harvest always takes priority over planting (beats thieves)
+                    let target = best_harvest
+                        .map(|(gx, gz, _)| (gx, gz))
+                        .or_else(|| best_plant.map(|(gx, gz, _)| (gx, gz)));
+
+                    if let Some(t) = target {
+                        slave.target_cell = Some(t);
+                        slave.action_timer = 0.0;
+                        slave.rng_offset = (slave.rng_offset
+                            .wrapping_add(rand::gen_range(1_usize, GRID + 3)))
+                            % (GRID * GRID);
+                        slave.state = AiState::MovingToTarget;
+                    } else if self.seeds == 0 {
+                        // Nothing to harvest either – wait for seeds
+                        slave.state = AiState::WaitingForSeeds;
+                        slave.wait_timer = 0.0;
+                    }
+                }
+
+                // ── MOVING TO TARGET ──────────────────────────────────────────────
+                AiState::MovingToTarget => {
+                    if let Some((gx, gz)) = slave.target_cell {
+                        // Dynamic re-target: if a closer harvestable appears, switch to it.
+                        // Only check for harvest (most time-sensitive) to avoid flip-flop.
+                        if self.ai_slave_mode == 0 {
+                            let current_dist_sq = {
+                                let cp = Self::cell_center(gx, gz);
+                                (cp - slave.position).length_squared()
+                            };
+                            let mut closer: Option<(usize, usize, f32)> = None;
+                            for agx in 0..GRID {
+                                for agz in 0..GRID {
+                                    if agx == gx && agz == gz { continue; }
+                                    if let CellState::Planted { growth } = self.field[agx][agz] {
+                                        if growth >= 1.0 {
+                                            let cp = Self::cell_center(agx, agz);
+                                            let dsq = (cp - slave.position).length_squared();
+                                            // Only re-target if at least 1.5 cells closer
+                                            if dsq + (CELL * 1.5).powi(2) < current_dist_sq {
+                                                if closer.map_or(true, |(_, _, d)| dsq < d) {
+                                                    closer = Some((agx, agz, dsq));
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if let Some((ngx, ngz, _)) = closer {
+                                slave.target_cell = Some((ngx, ngz));
+                            }
+                        }
+
+                        let (tgx, tgz) = slave.target_cell.unwrap();
+                        let cell_pos = Self::cell_center(tgx, tgz);
+                        let to_cell = cell_pos - slave.position;
+                        let dist = to_cell.length();
+
+                        if dist > 0.3 {
+                            let move_dir = to_cell.normalize();
+                            slave.facing = move_dir.x.atan2(move_dir.z);
+                            slave.position += move_dir * (4.0 * dt);
+                        } else {
+                            // Snap to cell centre for cleanliness
+                            slave.position = vec3(cell_pos.x, slave.position.y, cell_pos.z);
+                            slave.state = AiState::Working;
+                            slave.action_timer = 0.0;
+                        }
+                    } else {
+                        slave.state = AiState::Wandering;
+                    }
+                }
+
+                // ── WORKING (plant / harvest) ──────────────────────────────────────
+                // No delay – act immediately on arrival.
+                AiState::Working => {
+                    if let Some((gx, gz)) = slave.target_cell {
+                        match self.field[gx][gz] {
+                            CellState::Plowed => {
+                                if self.seeds > 0 {
+                                    self.seeds -= 1;
+                                    self.field[gx][gz] = CellState::Planted { growth: 0.0 };
+                                } else {
+                                    slave.state = AiState::WaitingForSeeds;
+                                    slave.target_cell = None;
+                                    slave.wait_timer = 0.0;
+                                }
+                            }
+                            CellState::Planted { growth } if growth >= 1.0 && self.ai_slave_mode == 0 => {
+                                self.field[gx][gz] = CellState::Plowed;
+                                self.potatoes += 1;
+                            }
+                            _ => {} // cell changed under us (thief or player) – just move on
+                        }
+                        // Immediately look for next job (no wander pause)
+                        if slave.state == AiState::Working {
+                            slave.target_cell = None;
+                            slave.state = AiState::Wandering;
+                            slave.wander_timer = 0.0; // force immediate re-scan next tick
+                        }
+                    } else {
+                        slave.state = AiState::Wandering;
+                    }
                 }
             }
         }
+
 
         // Smooth Camera
         let desired_target = self.farmer.position + vec3(0.0, 0.8, 0.0);
