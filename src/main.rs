@@ -10,7 +10,12 @@ use render::{draw_hud, draw_scene};
 
 #[macroquad::main("African Gun Runners Farming Sim")]
 async fn main() {
+    // Load all sounds from the `sounds/` folder before the game loop.
+    // Any missing MP3 files are silently skipped.
+    let sfx = crate::types::SoundEffects::load().await;
+
     let mut game = Game::new();
+    game.sfx = sfx;
 
     loop {
         let dt = get_frame_time();
