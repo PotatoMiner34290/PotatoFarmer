@@ -983,6 +983,19 @@ pub fn draw_hud(game: &Game) {
     draw_text("E - Plant/Harvest | [B] Place Turret | [I] Deploy Iron Dome", 20.0, 114.0, 18.0, WHITE);
     draw_text("F5 / K - Save Game   |   F9 / L - Load Game", 20.0, 136.0, 18.0, SKYBLUE);
 
+    // Render Master Volume Control Bar & Hotkey Hint in top right
+    let vol_pct = game.sfx.volume.clamp(0.0, 1.0);
+    let bar_w = 120.0;
+    let bar_h = 14.0;
+    let bar_x = screen_width() - bar_w - 20.0;
+    let bar_y = 25.0;
+    draw_text(&format!("Vol: {}%", (vol_pct * 100.0).round() as u32), bar_x - 70.0, bar_y + 12.0, 16.0, WHITE);
+    draw_rectangle(bar_x, bar_y, bar_w, bar_h, DARKGRAY);
+    draw_rectangle(bar_x, bar_y, bar_w * vol_pct, bar_h, GREEN);
+    draw_rectangle_lines(bar_x, bar_y, bar_w, bar_h, 1.5, WHITE);
+    draw_circle(bar_x + bar_w * vol_pct, bar_y + bar_h / 2.0, 6.0, GOLD);
+    draw_text("Ctrl + / - Adjust Vol", bar_x - 70.0, bar_y + 32.0, 14.0, LIGHTGRAY);
+
     let waiting_count = game.ai_slaves.iter().filter(|s| s.state == AiState::WaitingForSeeds).count();
     let inv_text = if waiting_count > 0 {
         format!(

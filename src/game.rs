@@ -273,6 +273,7 @@ impl Game {
             has_unlocked_minigun: self.has_unlocked_minigun,
             ai_slaves_count: self.ai_slaves.len() as u32,
             ai_slave_mode: self.ai_slave_mode,
+            master_volume: self.sfx.volume,
         };
 
         if let Ok(json) = serde_json::to_string(&save_data) {
@@ -340,6 +341,7 @@ impl Game {
                     self.has_unlocked_bullets = data.has_unlocked_bullets;
                     self.has_unlocked_minigun = data.has_unlocked_minigun;
                     self.ai_slave_mode = data.ai_slave_mode;
+                    self.sfx.set_volume(data.master_volume);
                     self.ai_slaves.clear();
                     for _ in 0..data.ai_slaves_count {
                         let spawn_x = rand::gen_range(0, GRID);
@@ -749,6 +751,37 @@ impl Game {
         self.action_cooldown = (self.action_cooldown - dt).max(0.0);
         self.farmer.step_cooldown = (self.farmer.step_cooldown - dt).max(0.0);
         self.msg_timer = (self.msg_timer - dt).max(0.0);
+
+        // Volume Hotkeys: Ctrl + '+' / '-' (Supports all international keyboard layouts & numpad)
+        let ctrl_down = is_key_down(KeyCode::LeftControl) || is_key_down(KeyCode::RightControl);
+        
+        let mut vol_change = 0.0;
+
+        if ctrl_down {
+            if is_key_pressed(KeyCode::Equal) || is_key_pressed(KeyCode::KpAdd) || is_key_pressed(KeyCode::RightBracket) || is_key_pressed(KeyCode::Semicolon) {
+                vol_change += 0.1;
+            }
+            if is_key_pressed(KeyCode::Minus) || is_key_pressed(KeyCode::KpSubtract) || is_key_pressed(KeyCode::Slash) {
+                vol_change -= 0.1;
+            }
+        }
+
+        // Also check typed characters when Ctrl is held (captures localized Shift+key combinations like Shift+'=' -> '+')
+        if ctrl_down {
+            while let Some(c) = get_char_pressed() {
+                if c == '+' || c == '=' {
+                    vol_change += 0.1;
+                } else if c == '-' || c == '_' {
+                    vol_change -= 0.1;
+                }
+            }
+        }
+
+        if vol_change != 0.0 {
+            let new_v = self.sfx.volume + vol_change;
+            self.sfx.set_volume(new_v);
+            self.set_msg(&format!("Master Volume: {}%", (self.sfx.volume * 100.0).round() as u32));
+        }
 
         if is_key_pressed(KeyCode::F5) || is_key_pressed(KeyCode::K) {
             self.save_game();
@@ -1353,6 +1386,7 @@ impl Game {
                                         child.has_stolen = true;
                                         child.fleeing = true;
                                         child.target_cell = None;
+                                        self.sfx.play_thief_giggle();
                                     }
                                 }
                             }
@@ -1407,6 +1441,7 @@ impl Game {
                     alive: true,
                 });
 
+                self.sfx.play_boat_engine();
                 self.set_msg("NAVY ALERT! African Rebels GunBoats entering The River!");
             }
         }
@@ -1557,6 +1592,7 @@ impl Game {
                             life: 0.6,
                         });
 
+                        self.sfx.play_turret_fire();
                         turret.fire_cooldown = 0.22;
                     }
                 }
@@ -1831,7 +1867,7 @@ impl Game {
                 let target = self.air_event.bomber_pos;
                 let dome_pos = dome.position + vec3(0.0, 1.5, 0.0);
 
-                // Only shoot down B-2 Bomber when it is strictly over/after the river and on the farm field (-26.0 <= target.x <= 15.0)
+                // Only shoot down B-2 Bomber when it is in range over the farm field (-26.0 <= target.x <= 15.0)
                 if target.x >= -26.0 && target.x <= 15.0 && dome_pos.distance(target) < 140.0 {
                     self.iron_dome_missiles.push(IronDomeMissile {
                         position: dome_pos,
@@ -1839,7 +1875,8 @@ impl Game {
                         speed: 75.0,
                         life: 2.5,
                     });
-                    dome.cooldown = 0.3;
+                    self.sfx.play_iron_dome_intercept();
+                    dome.cooldown = 0.1;
                 }
             }
         }
@@ -1892,6 +1929,7 @@ impl Game {
             self.air_event.active = true;
             self.air_event.fly_time = 0.0;
             self.air_event.bomber_hp = 3; // Reset to full HP for each new raid
+            self.sfx.play_jet_flyby();
             self.set_msg("AIR RAID INCOMING! B-2 Stealth Bomber & Fighter Jets Overhead!");
         }
 
@@ -1913,6 +1951,7 @@ impl Game {
                     velocity: dir1 * 60.0,
                     life: 0.8,
                 });
+                self.sfx.play_jet_shoot();
             }
 
             if progress >= 1.0 {

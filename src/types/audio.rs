@@ -1,4 +1,4 @@
-use macroquad::audio::{load_sound, play_sound, play_sound_once, Sound, PlaySoundParams};
+use macroquad::audio::{load_sound, play_sound, Sound, PlaySoundParams};
 
 /// Sound effects and music. Each slot maps 1-to-1 with a file in `sounds/`.
 /// See `sounds/README.md` for the full reference table.
@@ -23,6 +23,7 @@ pub struct SoundEffects {
     pub iron_dome_intercept: Option<Sound>,
     pub boat_engine:         Option<Sound>,
     pub thief_giggle:        Option<Sound>,
+    pub volume:              f32,
 }
 
 impl SoundEffects {
@@ -36,6 +37,7 @@ impl SoundEffects {
             iron_dome_intercept: None,
             boat_engine:         None,
             thief_giggle:        None,
+            volume:              1.0,
         }
     }
 
@@ -53,6 +55,7 @@ impl SoundEffects {
             iron_dome_intercept: try_load("sounds/iron_dome_intercept").await,
             boat_engine:         try_load("sounds/boat_engine").await,
             thief_giggle:        try_load("sounds/thief_giggle").await,
+            volume:              1.0,
         };
 
         // Start background music immediately, looped at 80% volume.
@@ -61,33 +64,43 @@ impl SoundEffects {
         sfx
     }
 
+    pub fn set_volume(&mut self, new_vol: f32) {
+        self.volume = new_vol.clamp(0.0, 1.0);
+        // Re-apply volume to background music loop
+        self.play_music();
+    }
+
     // ── Playback helpers ────────────────────────────────────────────────────
 
-    /// Play a sound once at full volume (fire-and-forget).
-    pub fn play_once(sound: &Option<Sound>) {
+    /// Play a sound once with scaled volume (fire-and-forget).
+    pub fn play_once(&self, sound: &Option<Sound>, base_volume: f32) {
+        let final_vol = (base_volume * self.volume).clamp(0.0, 1.0);
+        if final_vol <= 0.001 { return; }
         if let Some(s) = sound {
-            play_sound_once(s);
+            play_sound(s, PlaySoundParams { looped: false, volume: final_vol });
         }
     }
 
     /// Play a sound with full control over volume / looping.
-    pub fn play(sound: &Option<Sound>, looped: bool, volume: f32) {
+    pub fn play(&self, sound: &Option<Sound>, looped: bool, volume: f32) {
+        let final_vol = (volume * self.volume).clamp(0.0, 1.0);
+        if final_vol <= 0.001 && !looped { return; }
         if let Some(s) = sound {
-            play_sound(s, PlaySoundParams { looped, volume });
+            play_sound(s, PlaySoundParams { looped, volume: final_vol });
         }
     }
 
     // ── Convenience methods (one per slot) ─────────────────────────────────
 
     /// Start (or restart) the background music loop.
-    pub fn play_music(&self)               { Self::play(&self.music, true, 0.8); }
+    pub fn play_music(&self)               { self.play(&self.music, true, 0.8); }
 
-    pub fn play_turret_fire(&self)         { Self::play_once(&self.turret_fire); }
-    pub fn play_jet_flyby(&self)           { Self::play(&self.jet_flyby, false, 1.0); }
-    pub fn play_jet_shoot(&self)           { Self::play_once(&self.jet_shoot); }
-    pub fn play_iron_dome_intercept(&self) { Self::play_once(&self.iron_dome_intercept); }
-    pub fn play_boat_engine(&self)         { Self::play(&self.boat_engine, true, 0.6); }
-    pub fn play_thief_giggle(&self)        { Self::play_once(&self.thief_giggle); }
+    pub fn play_turret_fire(&self)         { self.play_once(&self.turret_fire, 1.0); }
+    pub fn play_jet_flyby(&self)           { self.play(&self.jet_flyby, false, 1.0); }
+    pub fn play_jet_shoot(&self)           { self.play_once(&self.jet_shoot, 1.0); }
+    pub fn play_iron_dome_intercept(&self) { self.play_once(&self.iron_dome_intercept, 1.0); }
+    pub fn play_boat_engine(&self)         { self.play(&self.boat_engine, true, 0.6); }
+    pub fn play_thief_giggle(&self)        { self.play_once(&self.thief_giggle, 1.0); }
 }
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
