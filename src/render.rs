@@ -983,18 +983,56 @@ pub fn draw_hud(game: &Game) {
     draw_text("E - Plant/Harvest | [B] Place Turret | [I] Deploy Iron Dome", 20.0, 114.0, 18.0, WHITE);
     draw_text("F5 / K - Save Game   |   F9 / L - Load Game", 20.0, 136.0, 18.0, SKYBLUE);
 
-    // Render Master Volume Control Bar & Hotkey Hint in top right
+    // Render Master Volume Control Bar, Music Mute Button & Hotkey Hint in top right
+    let is_music_muted = game.sfx.is_music_muted;
     let vol_pct = game.sfx.volume.clamp(0.0, 1.0);
-    let bar_w = 120.0;
+    
+    let btn_size = 22.0;
+    let btn_x = screen_width() - btn_size - 15.0;
+    let btn_y = 21.0;
+
+    let bar_w = 110.0;
     let bar_h = 14.0;
-    let bar_x = screen_width() - bar_w - 20.0;
+    let bar_x = btn_x - bar_w - 12.0;
     let bar_y = 25.0;
-    draw_text(&format!("Vol: {}%", (vol_pct * 100.0).round() as u32), bar_x - 70.0, bar_y + 12.0, 16.0, WHITE);
+
+    let vol_label = format!("Vol: {}%", (vol_pct * 100.0).round() as u32);
+    draw_text(&vol_label, bar_x - 70.0, bar_y + 12.0, 16.0, WHITE);
+
     draw_rectangle(bar_x, bar_y, bar_w, bar_h, DARKGRAY);
     draw_rectangle(bar_x, bar_y, bar_w * vol_pct, bar_h, GREEN);
     draw_rectangle_lines(bar_x, bar_y, bar_w, bar_h, 1.5, WHITE);
     draw_circle(bar_x + bar_w * vol_pct, bar_y + bar_h / 2.0, 6.0, GOLD);
-    draw_text("Ctrl + / - Adjust Vol", bar_x - 70.0, bar_y + 32.0, 14.0, LIGHTGRAY);
+
+    // Mute Music Button Container
+    let (mx, my) = mouse_position();
+    let is_hover = mx >= btn_x && mx <= btn_x + btn_size && my >= btn_y && my <= btn_y + btn_size;
+    let btn_bg = if is_music_muted {
+        if is_hover { Color::from_rgba(180, 50, 50, 255) } else { Color::from_rgba(120, 30, 30, 255) }
+    } else {
+        if is_hover { Color::from_rgba(80, 100, 120, 255) } else { Color::from_rgba(50, 60, 75, 255) }
+    };
+    draw_rectangle(btn_x, btn_y, btn_size, btn_size, btn_bg);
+    draw_rectangle_lines(btn_x, btn_y, btn_size, btn_size, 1.5, if is_music_muted { RED } else { WHITE });
+
+    // Music Note Icon
+    let cx = btn_x + btn_size / 2.0;
+    let cy = btn_y + btn_size / 2.0;
+    let icon_color = if is_music_muted { LIGHTGRAY } else { WHITE };
+
+    draw_circle(cx - 3.5, cy + 3.5, 2.2, icon_color);
+    draw_circle(cx + 2.5, cy + 1.5, 2.2, icon_color);
+    draw_line(cx - 1.5, cy + 3.5, cx - 1.5, cy - 4.5, 1.8, icon_color);
+    draw_line(cx + 4.5, cy + 1.5, cx + 4.5, cy - 6.5, 1.8, icon_color);
+    draw_line(cx - 1.5, cy - 4.5, cx + 4.5, cy - 6.5, 2.2, icon_color);
+
+    // Red diagonal cross overlay when music is muted
+    if is_music_muted {
+        draw_line(btn_x + 3.0, btn_y + 3.0, btn_x + btn_size - 3.0, btn_y + btn_size - 3.0, 2.5, RED);
+        draw_line(btn_x + btn_size - 3.0, btn_y + 3.0, btn_x + 3.0, btn_y + btn_size - 3.0, 2.5, RED);
+    }
+
+    draw_text("Click/Drag or Ctrl+/- Vol", bar_x - 70.0, bar_y + 32.0, 14.0, LIGHTGRAY);
 
     let waiting_count = game.ai_slaves.iter().filter(|s| s.state == AiState::WaitingForSeeds).count();
     let inv_text = if waiting_count > 0 {

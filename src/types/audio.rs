@@ -1,4 +1,4 @@
-use macroquad::audio::{load_sound, play_sound, Sound, PlaySoundParams};
+use macroquad::audio::{load_sound, play_sound, stop_sound, set_sound_volume, Sound, PlaySoundParams};
 
 /// Sound effects and music. Each slot maps 1-to-1 with a file in `sounds/`.
 /// See `sounds/README.md` for the full reference table.
@@ -24,6 +24,7 @@ pub struct SoundEffects {
     pub boat_engine:         Option<Sound>,
     pub thief_giggle:        Option<Sound>,
     pub volume:              f32,
+    pub is_music_muted:      bool,
 }
 
 impl SoundEffects {
@@ -38,6 +39,7 @@ impl SoundEffects {
             boat_engine:         None,
             thief_giggle:        None,
             volume:              1.0,
+            is_music_muted:      false,
         }
     }
 
@@ -56,6 +58,7 @@ impl SoundEffects {
             boat_engine:         try_load("sounds/boat_engine").await,
             thief_giggle:        try_load("sounds/thief_giggle").await,
             volume:              1.0,
+            is_music_muted:      false,
         };
 
         // Start background music immediately, looped at 80% volume.
@@ -64,10 +67,23 @@ impl SoundEffects {
         sfx
     }
 
+    pub fn toggle_music_mute(&mut self) {
+        self.is_music_muted = !self.is_music_muted;
+        let music_vol = if self.is_music_muted { 0.0 } else { 0.8 * self.volume };
+        if let Some(ref m) = self.music {
+            set_sound_volume(m, music_vol);
+        }
+    }
+
     pub fn set_volume(&mut self, new_vol: f32) {
         self.volume = new_vol.clamp(0.0, 1.0);
-        // Re-apply volume to background music loop
-        self.play_music();
+        let music_vol = if self.is_music_muted { 0.0 } else { 0.8 * self.volume };
+        if let Some(ref m) = self.music {
+            set_sound_volume(m, music_vol);
+        }
+        if let Some(ref b) = self.boat_engine {
+            set_sound_volume(b, 0.6 * self.volume);
+        }
     }
 
     // ── Playback helpers ────────────────────────────────────────────────────
@@ -93,7 +109,13 @@ impl SoundEffects {
     // ── Convenience methods (one per slot) ─────────────────────────────────
 
     /// Start (or restart) the background music loop.
-    pub fn play_music(&self)               { self.play(&self.music, true, 0.8); }
+    pub fn play_music(&self) {
+        if let Some(ref m) = self.music {
+            stop_sound(m);
+            let music_vol = if self.is_music_muted { 0.0 } else { 0.8 * self.volume };
+            play_sound(m, PlaySoundParams { looped: true, volume: music_vol });
+        }
+    }
 
     pub fn play_turret_fire(&self)         { self.play_once(&self.turret_fire, 1.0); }
     pub fn play_jet_flyby(&self)           { self.play(&self.jet_flyby, false, 1.0); }

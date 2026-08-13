@@ -274,6 +274,7 @@ impl Game {
             ai_slaves_count: self.ai_slaves.len() as u32,
             ai_slave_mode: self.ai_slave_mode,
             master_volume: self.sfx.volume,
+            is_muted: self.sfx.is_music_muted,
         };
 
         if let Ok(json) = serde_json::to_string(&save_data) {
@@ -341,6 +342,8 @@ impl Game {
                     self.has_unlocked_bullets = data.has_unlocked_bullets;
                     self.has_unlocked_minigun = data.has_unlocked_minigun;
                     self.ai_slave_mode = data.ai_slave_mode;
+                    self.sfx.volume = data.master_volume;
+                    self.sfx.is_music_muted = data.is_muted;
                     self.sfx.set_volume(data.master_volume);
                     self.ai_slaves.clear();
                     for _ in 0..data.ai_slaves_count {
@@ -729,7 +732,7 @@ impl Game {
     }
 
     pub fn update(&mut self, dt: f32) {
-        if is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::Tab) || is_key_pressed(KeyCode::V) {
+        if is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::Tab)  {
             self.menu_open = !self.menu_open;
         }
 
@@ -760,27 +763,53 @@ impl Game {
         if ctrl_down {
             if is_key_pressed(KeyCode::Equal) || is_key_pressed(KeyCode::KpAdd) || is_key_pressed(KeyCode::RightBracket) || is_key_pressed(KeyCode::Semicolon) {
                 vol_change += 0.1;
-            }
-            if is_key_pressed(KeyCode::Minus) || is_key_pressed(KeyCode::KpSubtract) || is_key_pressed(KeyCode::Slash) {
+            } else if is_key_pressed(KeyCode::Minus) || is_key_pressed(KeyCode::KpSubtract) || is_key_pressed(KeyCode::Slash) {
                 vol_change -= 0.1;
-            }
-        }
-
-        // Also check typed characters when Ctrl is held (captures localized Shift+key combinations like Shift+'=' -> '+')
-        if ctrl_down {
-            while let Some(c) = get_char_pressed() {
-                if c == '+' || c == '=' {
-                    vol_change += 0.1;
-                } else if c == '-' || c == '_' {
-                    vol_change -= 0.1;
+            } else {
+                while let Some(c) = get_char_pressed() {
+                    if c == '+' || c == '=' {
+                        vol_change += 0.1;
+                        break;
+                    } else if c == '-' || c == '_' {
+                        vol_change -= 0.1;
+                        break;
+                    }
                 }
             }
         }
 
         if vol_change != 0.0 {
-            let new_v = self.sfx.volume + vol_change;
+            let new_v = (self.sfx.volume + vol_change).clamp(0.0, 1.0);
             self.sfx.set_volume(new_v);
             self.set_msg(&format!("Master Volume: {}%", (self.sfx.volume * 100.0).round() as u32));
+        }
+
+        // Mouse volume slider and mute button interaction
+        let btn_size = 22.0;
+        let btn_x = screen_width() - btn_size - 15.0;
+        let btn_y = 21.0;
+
+        let bar_w = 110.0;
+        let bar_h = 14.0;
+        let bar_x = btn_x - bar_w - 12.0;
+        let bar_y = 25.0;
+        let (mx, my) = mouse_position();
+
+        if is_mouse_button_pressed(MouseButton::Left) {
+            if mx >= btn_x && mx <= btn_x + btn_size && my >= btn_y && my <= btn_y + btn_size {
+                self.sfx.toggle_music_mute();
+                self.set_msg(if self.sfx.is_music_muted { "Music Muted (SFX enabled)" } else { "Music Unmuted" });
+            }
+        }
+
+        if is_mouse_button_down(MouseButton::Left) {
+            if mx >= bar_x - 5.0 && mx <= bar_x + bar_w + 5.0 && my >= bar_y - 10.0 && my <= bar_y + bar_h + 10.0 {
+                let target_vol = ((mx - bar_x) / bar_w).clamp(0.0, 1.0);
+                if (target_vol - self.sfx.volume).abs() > 0.005 {
+                    self.sfx.set_volume(target_vol);
+                    self.set_msg(&format!("Master Volume: {}%", (self.sfx.volume * 100.0).round() as u32));
+                }
+            }
         }
 
         if is_key_pressed(KeyCode::F5) || is_key_pressed(KeyCode::K) {
