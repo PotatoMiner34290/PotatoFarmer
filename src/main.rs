@@ -16,6 +16,8 @@ async fn main() {
 
     let mut game = Game::new();
     game.sfx = sfx;
+    game.load_background().await;
+
 
     loop {
         let dt = get_frame_time();

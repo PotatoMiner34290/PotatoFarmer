@@ -63,9 +63,69 @@ pub struct Game {
     /// Per-house choke cooldowns — index matches valid house_spawns order.
     /// When a thief from house N is choked, house_choke_cooldowns[N] is set to 60 s.
     pub house_choke_cooldowns: Vec<f32>,
+    // Game Screen State & Start Menu Background
+    pub state: GameState,
+    pub menu_background: Option<Texture2D>,
+    pub background_file_name: Option<String>,
+    pub menu_orbit_angle: f32,
 }
 
 impl Game {
+    pub async fn load_background(&mut self) {
+        let candidate_paths = [
+            "assets/menu_bg.png",
+            "assets/menu_bg.jpg",
+            "assets/menu_background.png",
+            "assets/menu_background.jpg",
+            "assets/background.png",
+            "assets/background.jpg",
+            "menu_bg.png",
+            "menu_bg.jpg",
+            "menu_background.png",
+            "menu_background.jpg",
+            "background.png",
+            "background.jpg",
+        ];
+
+        for path in candidate_paths {
+            if std::path::Path::new(path).exists() {
+                if let Ok(tex) = load_texture(path).await {
+                    tex.set_filter(FilterMode::Linear);
+                    self.menu_background = Some(tex);
+                    self.background_file_name = Some(path.to_string());
+                    println!("Loaded custom main menu background from: {}", path);
+                    break;
+                }
+            }
+        }
+    }
+
+    pub fn start_new_game(&mut self) {
+        let sfx = std::mem::replace(&mut self.sfx, SoundEffects::empty());
+        let bg = self.menu_background.take();
+        let bg_name = self.background_file_name.take();
+        let orbit = self.menu_orbit_angle;
+
+        *self = Self::new();
+        self.sfx = sfx;
+        self.menu_background = bg;
+        self.background_file_name = bg_name;
+        self.menu_orbit_angle = orbit;
+        self.state = GameState::Playing;
+
+        let _ = std::fs::remove_file(SAVE_FILE);
+        self.save_game();
+        self.set_msg("Started New Game! Defend your farm & grow crops!");
+    }
+
+    pub fn load_saved_game(&mut self) {
+        if self.load_game() {
+            self.state = GameState::Playing;
+        } else {
+            self.set_msg("No saved game found!");
+        }
+    }
+
     pub fn play_synth_sound(&self, sound_type: &str) {
         // High quality programmatic sound feedback
         match sound_type {
@@ -94,7 +154,7 @@ impl Game {
         let mut houses = Vec::new();
         Self::generate_houses(&mut houses);
 
-        let mut game = Self {
+        Self {
             field: [[CellState::Grass; GRID]; GRID],
             farmer: Farmer {
                 grid_x: start_x,
@@ -164,14 +224,11 @@ impl Game {
             ai_slaves: Vec::new(),
             ai_slave_mode: 0,
             house_choke_cooldowns: Vec::new(),
-        };
-
-        if std::path::Path::new(SAVE_FILE).exists() {
-            game.load_game();
-            game.set_msg("Welcome back! Auto-loaded saved game.");
+            state: GameState::MainMenu,
+            menu_background: None,
+            background_file_name: None,
+            menu_orbit_angle: 0.0,
         }
-
-        game
     }
 
     pub fn generate_houses(houses: &mut Vec<HouseBounds>) {
@@ -732,23 +789,91 @@ impl Game {
     }
 
     pub fn update(&mut self, dt: f32) {
-        if is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::Tab)  {
-            self.menu_open = !self.menu_open;
-        }
+        self.menu_orbit_angle += dt * 0.2;
 
-        if self.menu_open {
-            if is_key_pressed(KeyCode::Y) {
-                // Restart the savegame and save it to new
-                let _ = std::fs::remove_file(SAVE_FILE);
-                *self = Game::new();
-                self.save_game();
-                self.set_msg("Restarted game and initialized new save!");
+        match self.state {
+            GameState::MainMenu => {
+                if is_mouse_button_pressed(MouseButton::Left) {
+                    let sw = screen_width();
+                    let title_y = 35.0;
+                    let title_h = 110.0;
+                    let menu_w = 560.0;
+                    let menu_x = (sw - menu_w) / 2.0;
+                    let menu_y = title_y + title_h + 25.0;
+                    let (mx, my) = mouse_position();
+                    let btn_w = menu_w - 40.0;
+                    let btn_h = 52.0;
+                    let start_btn_y = menu_y + 20.0;
+
+                    for i in 0..5 {
+                        let cur_y = start_btn_y + i as f32 * 63.0;
+                        let btn_x = menu_x + 20.0;
+                        if mx >= btn_x && mx <= btn_x + btn_w && my >= cur_y && my <= cur_y + btn_h {
+                            match i {
+                                0 => self.start_new_game(),
+                                1 => {
+                                    if std::path::Path::new(SAVE_FILE).exists() {
+                                        self.load_saved_game();
+                                    }
+                                }
+                                2 => self.state = GameState::Controls,
+                                3 => self.state = GameState::BgInfo,
+                                4 => std::process::exit(0),
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+
+                if is_key_pressed(KeyCode::N) || is_key_pressed(KeyCode::Enter) {
+                    self.start_new_game();
+                } else if is_key_pressed(KeyCode::L) {
+                    if std::path::Path::new(SAVE_FILE).exists() {
+                        self.load_saved_game();
+                    }
+                } else if is_key_pressed(KeyCode::C) || is_key_pressed(KeyCode::H) {
+                    self.state = GameState::Controls;
+                } else if is_key_pressed(KeyCode::B) {
+                    self.state = GameState::BgInfo;
+                } else if is_key_pressed(KeyCode::Q) {
+                    std::process::exit(0);
+                }
+                return;
             }
-            return;
-        }
+            GameState::Controls => {
+                if is_mouse_button_pressed(MouseButton::Left) || is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::Space) || is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::C) || is_key_pressed(KeyCode::H) {
+                    self.state = GameState::MainMenu;
+                }
+                return;
+            }
+            GameState::BgInfo => {
+                if is_mouse_button_pressed(MouseButton::Left) || is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::Space) || is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::B) {
+                    self.state = GameState::MainMenu;
+                }
+                return;
+            }
+            GameState::Playing => {
+                if is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::Tab) {
+                    self.menu_open = !self.menu_open;
+                }
 
-        if self.game_over {
-            return;
+                if self.menu_open {
+                    if is_key_pressed(KeyCode::M) || is_key_pressed(KeyCode::Q) {
+                        self.state = GameState::MainMenu;
+                        self.menu_open = false;
+                    } else if is_key_pressed(KeyCode::Y) {
+                        self.start_new_game();
+                    }
+                    return;
+                }
+
+                if self.game_over {
+                    if is_key_pressed(KeyCode::R) || is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::M) {
+                        self.state = GameState::MainMenu;
+                    }
+                    return;
+                }
+            }
         }
 
         self.action_cooldown = (self.action_cooldown - dt).max(0.0);
