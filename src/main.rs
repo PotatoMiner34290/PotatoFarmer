@@ -19,6 +19,7 @@ async fn main() {
     game.load_background().await;
     game.load_turret_model().await;
     game.load_iron_dome_model().await;
+    game.load_iron_dome_missile_model().await;
 
     loop {
         let dt = get_frame_time();

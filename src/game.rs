@@ -72,6 +72,8 @@ pub struct Game {
     pub turret_meshes: Vec<Mesh>,
     // OBJ model for Iron Dome rendering (parsed into macroquad Mesh list with MTL materials)
     pub iron_dome_meshes: Vec<Mesh>,
+    // OBJ model for Iron Dome Missiles (parsed into macroquad Mesh list with MTL materials)
+    pub iron_dome_missile_meshes: Vec<Mesh>,
 }
 
 impl Game {
@@ -151,6 +153,37 @@ impl Game {
         }
     }
 
+    pub async fn load_iron_dome_missile_model(&mut self) {
+        let mtl_paths = ["assets/missile_iron_dome.mtl", "missile_iron_dome.mtl"];
+        let mut mtl_map = None;
+        for path in mtl_paths {
+            if std::path::Path::new(path).exists() {
+                if let Ok(content) = std::fs::read_to_string(path) {
+                    let map = parse_mtl(&content);
+                    if !map.is_empty() {
+                        println!("Loaded missile_iron_dome MTL material definitions from: {}", path);
+                        mtl_map = Some(map);
+                        break;
+                    }
+                }
+            }
+        }
+
+        let obj_paths = ["assets/missile_iron_dome.obj", "missile_iron_dome.obj"];
+        for path in obj_paths {
+            if std::path::Path::new(path).exists() {
+                if let Ok(content) = std::fs::read_to_string(path) {
+                    let meshes = parse_obj_with_mtl(&content, mtl_map.as_ref());
+                    if !meshes.is_empty() {
+                        println!("Loaded missile_iron_dome OBJ model from: {}", path);
+                        self.iron_dome_missile_meshes = meshes;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     pub fn start_new_game(&mut self) {
         let sfx = std::mem::replace(&mut self.sfx, SoundEffects::empty());
         let bg = self.menu_background.take();
@@ -158,6 +191,7 @@ impl Game {
         let orbit = self.menu_orbit_angle;
         let turret_meshes = std::mem::take(&mut self.turret_meshes);
         let iron_dome_meshes = std::mem::take(&mut self.iron_dome_meshes);
+        let iron_dome_missile_meshes = std::mem::take(&mut self.iron_dome_missile_meshes);
 
         *self = Self::new();
         self.sfx = sfx;
@@ -166,6 +200,7 @@ impl Game {
         self.menu_orbit_angle = orbit;
         self.turret_meshes = turret_meshes;
         self.iron_dome_meshes = iron_dome_meshes;
+        self.iron_dome_missile_meshes = iron_dome_missile_meshes;
         self.state = GameState::Playing;
 
         let _ = std::fs::remove_file(SAVE_FILE);
@@ -286,6 +321,7 @@ impl Game {
             menu_orbit_angle: 0.0,
             turret_meshes: Vec::new(),
             iron_dome_meshes: Vec::new(),
+            iron_dome_missile_meshes: Vec::new(),
         }
     }
 

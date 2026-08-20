@@ -336,14 +336,51 @@ pub fn draw_iron_domes(game: &Game) {
         }
     }
 
-    // In-flight Iron Dome Missiles
+    // In-flight Iron Dome Missiles (3D missile_iron_dome OBJ model)
     for m in &game.iron_dome_missiles {
         if !game.camera.is_in_view(m.position, 2.0) {
             continue;
         }
-        draw_cylinder(m.position, 0.1, 0.08, 0.8, None, missile_c);
-        draw_sphere(m.position, 0.2, None, ORANGE);
-        draw_line_3d(m.position, m.position - vec3(0.0, 1.5, 0.0), RED);
+
+        let delta = m.target_pos - m.position;
+        let dist = delta.length();
+        let dir = if dist > 0.001 { delta / dist } else { vec3(0.0, 1.0, 0.0) };
+
+        if !game.iron_dome_missile_meshes.is_empty() {
+            let scale = 3.0_f32;
+            let rot = Quat::from_rotation_arc(vec3(0.0, 1.0, 0.0), dir);
+
+            for orig_mesh in &game.iron_dome_missile_meshes {
+                let transformed_vertices: Vec<Vertex> = orig_mesh
+                    .vertices
+                    .iter()
+                    .map(|v| {
+                        let world_pos = m.position + rot.mul_vec3(v.position * scale);
+                        Vertex {
+                            position: world_pos,
+                            uv: v.uv,
+                            color: v.color,
+                            normal: v.normal,
+                        }
+                    })
+                    .collect();
+
+                let transformed_mesh = Mesh {
+                    vertices: transformed_vertices,
+                    indices: orig_mesh.indices.clone(),
+                    texture: orig_mesh.texture.clone(),
+                };
+
+                draw_mesh(&transformed_mesh);
+            }
+            // Exhaust fiery trail behind the 3D rocket
+            draw_sphere(m.position - dir * 0.4, 0.25, None, ORANGE);
+            draw_line_3d(m.position, m.position - dir * 1.6, RED);
+        } else {
+            draw_cylinder(m.position, 0.1, 0.08, 0.8, None, missile_c);
+            draw_sphere(m.position, 0.2, None, ORANGE);
+            draw_line_3d(m.position, m.position - vec3(0.0, 1.5, 0.0), RED);
+        }
     }
 }
 
