@@ -109,4 +109,35 @@ impl Game {
             }
         }
     }
+
+    pub async fn load_minigun_model(&mut self) {
+        let mtl_paths = ["assets/Minigun.mtl", "Minigun.mtl", "assets/minigun.mtl", "minigun.mtl"];
+        let mut mtl_map = None;
+        for path in mtl_paths {
+            if std::path::Path::new(path).exists() {
+                if let Ok(content) = std::fs::read_to_string(path) {
+                    let map = parse_mtl(&content);
+                    if !map.is_empty() {
+                        println!("Loaded Minigun MTL material definitions from: {}", path);
+                        mtl_map = Some(map);
+                        break;
+                    }
+                }
+            }
+        }
+
+        let obj_paths = ["assets/Minigun.obj", "Minigun.obj", "assets/minigun.obj", "minigun.obj"];
+        for path in obj_paths {
+            if std::path::Path::new(path).exists() {
+                if let Ok(content) = std::fs::read_to_string(path) {
+                    let meshes = parse_obj_with_mtl(&content, mtl_map.as_ref());
+                    if !meshes.is_empty() {
+                        println!("Loaded Minigun OBJ model from: {}", path);
+                        self.minigun_meshes = meshes;
+                        break;
+                    }
+                }
+            }
+        }
+    }
 }

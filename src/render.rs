@@ -614,7 +614,8 @@ pub fn draw_current_tile_marker(game: &Game) {
     }
 }
 
-pub fn draw_farmer_3d(farmer: &Farmer) {
+pub fn draw_farmer_3d(game: &Game) {
+    let farmer = &game.farmer;
     let pos = farmer.position;
     let facing = farmer.facing;
 
@@ -651,6 +652,69 @@ pub fn draw_farmer_3d(farmer: &Farmer) {
         let hoe_handle_end = hoe_handle_start + forward * 0.8 - vec3(0.0, 0.7, 0.0);
         draw_line_3d(hoe_handle_start, hoe_handle_end, Color::from_rgba(120, 80, 45, 255));
         draw_cube(hoe_handle_end, vec3(0.25, 0.05, 0.15), None, GRAY);
+    } else if game.minigun_equipped {
+        let gun_center = torso_pos + forward * 0.45 - vec3(0.0, 0.1, 0.0);
+        let barrel_tip = gun_center + forward * 0.5;
+
+        if !game.minigun_meshes.is_empty() {
+            let scale = 0.28_f32;
+            let a = facing;
+            let (sin_a, cos_a) = (a.sin(), a.cos());
+
+            for orig_mesh in &game.minigun_meshes {
+                let transformed_vertices: Vec<Vertex> = orig_mesh
+                    .vertices
+                    .iter()
+                    .map(|v| {
+                        let p = v.position * scale;
+                        let rot_x = p.x * cos_a + p.z * sin_a;
+                        let rot_z = -p.x * sin_a + p.z * cos_a;
+                        let world_pos = gun_center + vec3(rot_x, p.y, rot_z);
+                        Vertex {
+                            position: world_pos,
+                            uv: v.uv,
+                            color: v.color,
+                            normal: v.normal,
+                        }
+                    })
+                    .collect();
+
+                let transformed_mesh = Mesh {
+                    vertices: transformed_vertices,
+                    indices: orig_mesh.indices.clone(),
+                    texture: orig_mesh.texture.clone(),
+                };
+
+                draw_mesh(&transformed_mesh);
+            }
+        } else {
+            // Procedural fallback minigun model
+            draw_cylinder(gun_center, 0.14, 0.14, 0.7, None, Color::from_rgba(35, 38, 42, 255));
+            for b_idx in 0..6 {
+                let angle = (b_idx as f32) * (std::f32::consts::TAU / 6.0) + (get_time() as f32 * 15.0);
+                let b_off = right * (angle.cos() * 0.06) + vec3(0.0, angle.sin() * 0.06, 0.0);
+                draw_cylinder(barrel_tip + b_off, 0.03, 0.03, 0.45, None, Color::from_rgba(18, 20, 22, 255));
+            }
+            draw_cube(gun_center - vec3(0.0, 0.16, 0.0), vec3(0.22, 0.22, 0.22), None, GOLD);
+        }
+
+        // Bright Orange Muzzle Flash when firing
+        if game.minigun_cooldown > 0.01 {
+            let muzzle = barrel_tip + forward * 0.45;
+            draw_sphere(muzzle, 0.18, None, ORANGE);
+            draw_sphere(muzzle, 0.28, None, Color::from_rgba(255, 210, 40, 180));
+        }
+    }
+}
+
+pub fn draw_minigun_bullets(game: &Game) {
+    for b in &game.minigun_bullets {
+        if !game.camera.is_in_view(b.position, 1.0) {
+            continue;
+        }
+        let tail = b.position - b.velocity.normalize() * 0.7;
+        draw_line_3d(b.position, tail, YELLOW);
+        draw_cube(b.position, vec3(0.14, 0.14, 0.14), None, ORANGE);
     }
 }
 
@@ -908,7 +972,8 @@ pub fn draw_scene(game: &Game) {
     }
 
     draw_current_tile_marker(game);
-    draw_farmer_3d(&game.farmer);
+    draw_farmer_3d(game);
+    draw_minigun_bullets(game);
     draw_ai_slaves(game);
 
     draw_air_event_3d(game);

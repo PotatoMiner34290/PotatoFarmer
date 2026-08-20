@@ -47,6 +47,7 @@ pub struct Game {
     pub gold: u32,
     pub bullets_count: u32,
     pub minigun_unlocked: bool,
+    pub minigun_equipped: bool,
     pub minigun_cooldown: f32,
     pub minigun_bullets: Vec<MinigunBullet>,
     // Hidden Inventory Unlocks (only visible once picked up)
@@ -77,6 +78,7 @@ pub struct Game {
     pub iron_dome_meshes: Vec<Mesh>,
     // OBJ model for Iron Dome Missiles (parsed into macroquad Mesh list with MTL materials)
     pub iron_dome_missile_meshes: Vec<Mesh>,
+    pub minigun_meshes: Vec<Mesh>,
 }
 
 impl Game {
@@ -88,6 +90,7 @@ impl Game {
         let turret_meshes = std::mem::take(&mut self.turret_meshes);
         let iron_dome_meshes = std::mem::take(&mut self.iron_dome_meshes);
         let iron_dome_missile_meshes = std::mem::take(&mut self.iron_dome_missile_meshes);
+        let minigun_meshes = std::mem::take(&mut self.minigun_meshes);
 
         *self = Self::new();
         self.sfx = sfx;
@@ -97,6 +100,7 @@ impl Game {
         self.turret_meshes = turret_meshes;
         self.iron_dome_meshes = iron_dome_meshes;
         self.iron_dome_missile_meshes = iron_dome_missile_meshes;
+        self.minigun_meshes = minigun_meshes;
         self.state = GameState::Playing;
 
         let _ = std::fs::remove_file(SAVE_FILE);
@@ -198,6 +202,7 @@ impl Game {
             gold: 0,
             bullets_count: 0,
             minigun_unlocked: false,
+            minigun_equipped: false,
             minigun_cooldown: 0.0,
             minigun_bullets: Vec::new(),
             has_unlocked_blood_diamonds: false,
@@ -219,6 +224,7 @@ impl Game {
             turret_meshes: Vec::new(),
             iron_dome_meshes: Vec::new(),
             iron_dome_missile_meshes: Vec::new(),
+            minigun_meshes: Vec::new(),
         }
     }
 
@@ -1155,10 +1161,10 @@ impl Game {
         self.children.retain(|c| c.alive);
 
         // --- AFRICAN REBEL GUNBOATS RIVER RAID EVENT ---
-        // Spawn African Rebel gunboat raids twice as often as B-2 bomber (every 30s) if player has deployed turrets!
+        // Spawn African Rebel gunboat raids every 1m 30s (90s delay) if player has deployed turrets!
         if !self.turrets.is_empty() {
             self.raid_timer += dt;
-            if self.raid_timer >= 30.0 {
+            if self.raid_timer >= 90.0 {
                 self.raid_timer = 0.0;
 
                 // Only spawn a gunboat if current rebels count is < 3
@@ -1386,40 +1392,100 @@ impl Game {
             self.turret_bullets.retain(|b| b.life > 0.0);
         }
 
-        // Manual Heavy Minigun Firing (Hold [F] or Left Click to fire in facing direction)
-        self.minigun_cooldown = (self.minigun_cooldown - dt).max(0.0);
-        if self.minigun_unlocked && self.bullets_count > 0 && self.minigun_cooldown <= 0.0 {
-            let manual_fire = is_mouse_button_down(MouseButton::Left) || is_key_down(KeyCode::F) || is_key_down(KeyCode::M);
-
-            if manual_fire {
-                self.bullets_count -= 1;
-                self.minigun_cooldown = 0.07;
-                self.sfx.play_turret_fire();
-                let dir = vec3(self.farmer.facing.sin(), 0.0, self.farmer.facing.cos()).normalize();
-                let muzzle = self.farmer.position + vec3(0.0, 0.9, 0.0) + dir * 0.6;
-                if self.minigun_bullets.len() < 80 {
-                    self.minigun_bullets.push(MinigunBullet {
-                        position: muzzle,
-                        velocity: dir * 60.0,
-                        life: 1.0,
-                    });
-                }
+        // Heavy Minigun Equip & Shooting Mechanics
+        if is_key_pressed(KeyCode::F) && self.minigun_unlocked {
+            if !self.minigun_equipped {
+                self.minigun_equipped = true;
+                self.set_msg("HEAVY MINIGUN EQUIPPED! Hold [F] or LMB to Shoot! (Press [Q] to holster)");
+            }
+        }
+        if is_key_pressed(KeyCode::Q) || is_key_pressed(KeyCode::G) || is_key_pressed(KeyCode::Key1) {
+            if self.minigun_equipped {
+                self.minigun_equipped = false;
+                self.set_msg("Minigun Holstered.");
             }
         }
 
-        // Update Minigun Bullets & Damage Handling
+        self.minigun_cooldown = (self.minigun_cooldown - dt).max(0.0);
+        if self.minigun_equipped && self.minigun_unlocked && self.bullets_count > 0 && self.minigun_cooldown <= 0.0 {
+            let firing = is_mouse_button_down(MouseButton::Left) || is_key_down(KeyCode::F) || is_key_down(KeyCode::M);
+
+            if firing {
+                self.bullets_count -= 1;
+                self.minigun_cooldown = 0.06;
+                self.sfx.play_turret_fire();
+
+                // Homing check for nearby African Rebels in front
+                let f_pos = self.farmer.position;
+                let f_forward = vec3(self.farmer.facing.sin(), 0.0, self.farmer.facing.cos()).normalize();
+                let mut homing_target = None;
+                let mut closest_d = 35.0;
+                for rebel in self.rebels.iter() {
+                    if rebel.alive {
+                        let rpos = rebel.position + vec3(0.0, 0.6, 0.0);
+                        let to_r = (rpos - f_pos).normalize();
+                        if f_forward.dot(to_r) > 0.1 {
+                            let d = f_pos.distance(rpos);
+                            if d < closest_d {
+                                closest_d = d;
+                                homing_target = Some(rpos);
+                            }
+                        }
+                    }
+                }
+
+                let dir = if let Some(target_pos) = homing_target {
+                    let d = (target_pos - (f_pos + vec3(0.0, 0.9, 0.0))).normalize();
+                    self.farmer.facing = d.x.atan2(d.z);
+                    d
+                } else {
+                    f_forward
+                };
+
+                let muzzle = self.farmer.position + vec3(0.0, 0.9, 0.0) + dir * 0.7;
+                if self.minigun_bullets.len() < 100 {
+                    self.minigun_bullets.push(MinigunBullet {
+                        position: muzzle,
+                        velocity: dir * 65.0,
+                        life: 0.9,
+                    });
+                }
+                // Small muzzle smoke puff
+                self.spawn_smoke(muzzle, rand::gen_range(0.18, 0.28), Color::from_rgba(180, 180, 180, 170));
+            }
+        }
+
+        // Update Minigun Bullets, Homing Steer, Smoke & Damage
+        let mut hit_effects = Vec::new();
         for bullet in self.minigun_bullets.iter_mut() {
+            // Homing steer toward nearest rebel
+            let mut steer_target = None;
+            for rebel in self.rebels.iter() {
+                if rebel.alive {
+                    let rpos = rebel.position + vec3(0.0, 0.6, 0.0);
+                    if bullet.position.distance(rpos) < 15.0 {
+                        steer_target = Some(rpos);
+                        break;
+                    }
+                }
+            }
+            if let Some(rpos) = steer_target {
+                let steer_dir = (rpos - bullet.position).normalize();
+                bullet.velocity = (bullet.velocity + steer_dir * 45.0 * dt).normalize() * 65.0;
+            }
+
             bullet.position += bullet.velocity * dt;
             bullet.life -= dt;
 
-            // Damage Rebels
+            // Damage Rebels (Rebel has 5.0 HP max; each bullet deals 1.0 damage = 5 bullets to kill)
             for rebel in self.rebels.iter_mut() {
                 if rebel.alive && bullet.position.distance(rebel.position + vec3(0.0, 0.6, 0.0)) < 1.2 {
-                    rebel.hp -= 3.0;
+                    rebel.hp -= 1.0;
                     if rebel.hp <= 0.0 {
                         rebel.alive = false;
                     }
                     bullet.life = 0.0;
+                    hit_effects.push(bullet.position);
                     break;
                 }
             }
@@ -1428,11 +1494,12 @@ impl Game {
             if bullet.life > 0.0 {
                 for boat in self.gunboats.iter_mut() {
                     if boat.alive && bullet.position.distance(boat.position + vec3(0.0, 0.8, 0.0)) < 2.5 {
-                        boat.hp -= 2.5;
+                        boat.hp -= 1.5;
                         if boat.hp <= 0.0 {
                             boat.alive = false;
                         }
                         bullet.life = 0.0;
+                        hit_effects.push(bullet.position);
                         break;
                     }
                 }
@@ -1442,17 +1509,23 @@ impl Game {
             if bullet.life > 0.0 {
                 for child in self.children.iter_mut() {
                     if child.alive && bullet.position.distance(child.position + vec3(0.0, 0.6, 0.0)) < 1.0 {
-                        child.hp -= 2.0;
+                        child.hp -= 1.0;
                         if child.hp <= 0.0 {
                             child.alive = false;
                         }
                         bullet.life = 0.0;
+                        hit_effects.push(bullet.position);
                         break;
                     }
                 }
             }
         }
         self.minigun_bullets.retain(|b| b.life > 0.0);
+
+        for pos in hit_effects {
+            self.spawn_sparkles(pos);
+            self.spawn_smoke(pos, 0.32, Color::from_rgba(255, 140, 40, 220));
+        }
 
         // Ground Loot Pickup (Player walks over dropped loot)
         let f_pos = self.farmer.position;
