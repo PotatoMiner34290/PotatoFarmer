@@ -658,7 +658,7 @@ pub fn draw_farmer_3d(game: &Game) {
 
         if !game.minigun_meshes.is_empty() {
             let scale = 0.28_f32;
-            let a = facing;
+            let a = facing + std::f32::consts::FRAC_PI_2;
             let (sin_a, cos_a) = (a.sin(), a.cos());
 
             for orig_mesh in &game.minigun_meshes {
