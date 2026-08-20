@@ -154,12 +154,17 @@ impl SoundEffects {
 /// Returns the first one that succeeds, or `None` if none exist / are readable.
 /// MP3 is intentionally excluded — quad-snd panics on it (UnsupportedFormat).
 async fn try_load(base: &str) -> Option<Sound> {
-    for ext in &["ogg", "wav", "flac"] {
-        let path = format!("{}.{}", base, ext);
-        if std::path::Path::new(&path).exists() {
-            match load_sound(&path).await {
-                Ok(s)  => return Some(s),
-                Err(e) => eprintln!("[audio] failed to decode {}: {:?}", path, e),
+    let prefixes = ["assets/", ""];
+    let exts = ["ogg", "wav", "flac"];
+
+    for prefix in &prefixes {
+        for ext in &exts {
+            let path = format!("{}{}.{}", prefix, base, ext);
+            if std::path::Path::new(&path).exists() {
+                match load_sound(&path).await {
+                    Ok(s) => return Some(s),
+                    Err(e) => eprintln!("[audio] failed to decode {}: {:?}", path, e),
+                }
             }
         }
     }

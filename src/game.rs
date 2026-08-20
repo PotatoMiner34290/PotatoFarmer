@@ -1388,6 +1388,7 @@ impl Game {
             if manual_fire {
                 self.bullets_count -= 1;
                 self.minigun_cooldown = 0.07;
+                self.sfx.play_turret_fire();
                 let dir = vec3(self.farmer.facing.sin(), 0.0, self.farmer.facing.cos()).normalize();
                 let muzzle = self.farmer.position + vec3(0.0, 0.9, 0.0) + dir * 0.6;
                 if self.minigun_bullets.len() < 80 {
