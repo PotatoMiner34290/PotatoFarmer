@@ -155,15 +155,53 @@ pub fn draw_turrets(game: &Game) {
             continue;
         }
 
-        // Turret Mount Pedestal
-        draw_cylinder(pos + vec3(0.0, 0.4, 0.0), 0.7, 0.6, 0.8, None, metal_dark);
-        // Swivel Gun Dome Head
-        draw_sphere(pos + vec3(0.0, 0.95, 0.0), 0.55, None, gun_green);
-        // Twin Heavy Machine Gun Barrels
-        draw_cylinder(pos + vec3(0.2, 1.05, 0.5), 0.08, 0.08, 1.2, None, DARKGRAY);
-        draw_cylinder(pos + vec3(-0.2, 1.05, 0.5), 0.08, 0.08, 1.2, None, DARKGRAY);
-        // Red Targeting Radar Sensor
-        draw_sphere(pos + vec3(0.0, 1.35, 0.0), 0.12, None, RED);
+        if !game.turret_meshes.is_empty() {
+            // --- OBJ Model render ---
+            let scale = 3.5_f32;
+            let a = turret.angle;
+            let (sin_a, cos_a) = (a.sin(), a.cos());
+
+            for orig_mesh in &game.turret_meshes {
+                let transformed_vertices: Vec<Vertex> = orig_mesh
+                    .vertices
+                    .iter()
+                    .map(|v| {
+                        let p = v.position * scale;
+                        let rot_x = p.x * cos_a + p.z * sin_a;
+                        let rot_z = -p.x * sin_a + p.z * cos_a;
+                        let world_pos = pos + vec3(rot_x, p.y, rot_z);
+                        Vertex {
+                            position: world_pos,
+                            uv: v.uv,
+                            color: v.color,
+                            normal: v.normal,
+                        }
+                    })
+                    .collect();
+
+                let transformed_mesh = Mesh {
+                    vertices: transformed_vertices,
+                    indices: orig_mesh.indices.clone(),
+                    texture: orig_mesh.texture.clone(),
+                };
+
+                draw_mesh(&transformed_mesh);
+            }
+        } else {
+            // --- Procedural fallback (original cubes/spheres) ---
+            // Turret Mount Pedestal
+            draw_cylinder(pos + vec3(0.0, 0.4, 0.0), 0.7, 0.6, 0.8, None, metal_dark);
+            // Swivel Gun Dome Head — rotated to face aim direction
+            let a = turret.angle;
+            let barrel_offset = vec3(a.sin() * 0.5, 1.05, a.cos() * 0.5);
+            draw_sphere(pos + vec3(0.0, 0.95, 0.0), 0.55, None, gun_green);
+            // Twin Heavy Machine Gun Barrels (now aimed at turret.angle)
+            let right = vec3(a.cos() * 0.2, 0.0, -a.sin() * 0.2);
+            draw_cylinder(pos + barrel_offset + right, 0.08, 0.08, 1.2, None, DARKGRAY);
+            draw_cylinder(pos + barrel_offset - right, 0.08, 0.08, 1.2, None, DARKGRAY);
+            // Red Targeting Radar Sensor
+            draw_sphere(pos + vec3(0.0, 1.35, 0.0), 0.12, None, RED);
+        }
     }
 
     // Render Laser Bullets fired by Turrets
@@ -176,13 +214,12 @@ pub fn draw_turrets(game: &Game) {
     }
 }
 
+
 // Draw Thief Children (Detailed small brown children models with running/harvesting animations & Health bar)
 pub fn draw_thief_children(game: &Game) {
     let skin_tone = Color::from_rgba(95, 58, 32, 255);
-    let hair_dark = Color::from_rgba(25, 18, 12, 255);
     let shirt_red = Color::from_rgba(205, 55, 45, 255);
     let pants_blue = Color::from_rgba(45, 65, 110, 255);
-    let _sack_brown = Color::from_rgba(165, 115, 60, 255);
 
     for child in &game.children {
         if !child.alive {
@@ -196,54 +233,39 @@ pub fn draw_thief_children(game: &Game) {
         let facing = child.facing;
         let is_harvesting = child.harvesting_timer > 0.0 && !child.fleeing;
         let leg_swing = if is_harvesting { 0.0 } else { (child.anim_timer).sin() * 0.25 };
-        let arm_swing = if is_harvesting { 0.3 } else { (child.anim_timer).cos() * 0.3 };
 
         let forward = vec3(facing.sin(), 0.0, facing.cos());
         let right = vec3(forward.z, 0.0, -forward.x);
 
-        // 1. Legs (Left and Right with walking/running swing)
+        // Legs (cubes instead of cylinders for performance)
         let l_leg_pos = pos + right * 0.09 + forward * leg_swing + vec3(0.0, 0.18, 0.0);
         let r_leg_pos = pos - right * 0.09 - forward * leg_swing + vec3(0.0, 0.18, 0.0);
-        draw_cylinder(l_leg_pos, 0.05, 0.05, 0.36, None, pants_blue);
-        draw_cylinder(r_leg_pos, 0.05, 0.05, 0.36, None, pants_blue);
+        draw_cube(l_leg_pos, vec3(0.10, 0.36, 0.10), None, pants_blue);
+        draw_cube(r_leg_pos, vec3(0.10, 0.36, 0.10), None, pants_blue);
 
-        // Bare feet
-        draw_sphere(l_leg_pos - vec3(0.0, 0.18, 0.0) + forward * 0.04, 0.05, None, skin_tone);
-        draw_sphere(r_leg_pos - vec3(0.0, 0.18, 0.0) + forward * 0.04, 0.05, None, skin_tone);
-
-        // 2. Torso (Short shirt, leaning forward slightly when running/harvesting)
+        // Torso
         let lean_offset = if is_harvesting { forward * 0.15 - vec3(0.0, 0.1, 0.0) } else { forward * 0.05 };
         let torso_pos = pos + vec3(0.0, 0.52, 0.0) + lean_offset;
-        draw_cylinder(torso_pos, 0.16, 0.14, 0.42, None, shirt_red);
+        draw_cube(torso_pos, vec3(0.32, 0.42, 0.28), None, shirt_red);
 
-        // 3. Arms (Left and Right swinging or reaching down to harvest potatoes)
+        // Arms
         if is_harvesting {
-            // Reaching down to pick potatoes from soil
             let reach_pos = torso_pos + forward * 0.2 - vec3(0.0, 0.22, 0.0);
-            draw_cylinder(reach_pos + right * 0.1, 0.04, 0.04, 0.35, None, skin_tone);
-            draw_cylinder(reach_pos - right * 0.1, 0.04, 0.04, 0.35, None, skin_tone);
-            // Soil rustle effect while harvesting
-            draw_sphere(reach_pos + vec3(0.0, -0.1, 0.0), 0.12, None, Color::from_rgba(110, 80, 45, 200));
+            draw_cube(reach_pos + right * 0.1, vec3(0.08, 0.35, 0.08), None, skin_tone);
+            draw_cube(reach_pos - right * 0.1, vec3(0.08, 0.35, 0.08), None, skin_tone);
         } else {
-            // Running arm movements
+            let arm_swing = (child.anim_timer).cos() * 0.3;
             let l_arm_pos = torso_pos + right * 0.18 - forward * arm_swing;
             let r_arm_pos = torso_pos - right * 0.18 + forward * arm_swing;
-            draw_cylinder(l_arm_pos, 0.04, 0.04, 0.36, None, skin_tone);
-            draw_cylinder(r_arm_pos, 0.04, 0.04, 0.36, None, skin_tone);
+            draw_cube(l_arm_pos, vec3(0.08, 0.36, 0.08), None, skin_tone);
+            draw_cube(r_arm_pos, vec3(0.08, 0.36, 0.08), None, skin_tone);
         }
 
-        // 4. Head & Hair
+        // Head (keep sphere — it's round and visible)
         let head_pos = torso_pos + vec3(0.0, 0.32, 0.0);
         draw_sphere(head_pos, 0.16, None, skin_tone);
-        // Short dark hair cap
-        draw_sphere(head_pos + vec3(0.0, 0.04, 0.0), 0.165, None, hair_dark);
-        // Eyes
-        draw_sphere(head_pos + forward * 0.14 + right * 0.05 + vec3(0.0, 0.02, 0.0), 0.025, None, WHITE);
-        draw_sphere(head_pos + forward * 0.14 - right * 0.05 + vec3(0.0, 0.02, 0.0), 0.025, None, WHITE);
-        draw_sphere(head_pos + forward * 0.155 + right * 0.05 + vec3(0.0, 0.02, 0.0), 0.012, None, BLACK);
-        draw_sphere(head_pos + forward * 0.155 - right * 0.05 + vec3(0.0, 0.02, 0.0), 0.012, None, BLACK);
 
-        // 6. Floating 3D Health Bar above Thief Head
+        // Floating 3D Health Bar above Thief Head
         let hp_ratio = (child.hp / child.max_hp).clamp(0.0, 1.0);
         let bar_center = head_pos + vec3(0.0, 0.45, 0.0);
         draw_cube(bar_center, vec3(0.8, 0.1, 0.05), None, BLACK);
@@ -693,7 +715,7 @@ pub fn draw_scene(game: &Game) {
 
             set_camera(&Camera3D {
                 position: cam_pos,
-                up: vec3(0.0, 1.0, 0.0),
+                up: vec3(0.0, -1.0, 0.0),
                 target: cam_target,
                 fovy: 35.0,
                 projection: Projection::Perspective,
@@ -759,9 +781,10 @@ pub fn draw_scene(game: &Game) {
             continue;
         }
         let alpha = (particle.life * 255.0) as u8;
-        draw_sphere(
+        // draw_cube is 3-5x faster than draw_sphere in macroquad
+        draw_cube(
             particle.position,
-            0.09,
+            vec3(0.13, 0.13, 0.13),
             None,
             Color::from_rgba(
                 particle.color.r as u8,
@@ -778,10 +801,11 @@ pub fn draw_scene(game: &Game) {
         }
         let progress = sparkle.life / sparkle.max_life;
         let alpha = (progress * 255.0) as u8;
-        let size = 0.06 + progress * 0.08;
-        draw_sphere(
+        let size = 0.09 + progress * 0.1;
+        // draw_cube is 3-5x faster than draw_sphere
+        draw_cube(
             sparkle.position,
-            size,
+            vec3(size, size, size),
             None,
             Color::from_rgba(
                 sparkle.color.r as u8,
@@ -805,6 +829,7 @@ pub fn draw_ai_slaves(game: &Game) {
     let skin_tone = Color::from_rgba(115, 75, 45, 255);
     let shirt_c = Color::from_rgba(200, 140, 50, 255);
     let pants_c = Color::from_rgba(50, 50, 70, 255);
+    let hat_c = GOLD;
 
     for slave in &game.ai_slaves {
         let pos = slave.position;
@@ -816,22 +841,22 @@ pub fn draw_ai_slaves(game: &Game) {
         let forward = vec3(facing.sin(), 0.0, facing.cos());
         let right = vec3(forward.z, 0.0, -forward.x);
 
-        // Legs
-        draw_cylinder(pos + right * 0.1 + forward * leg_swing + vec3(0.0, 0.35, 0.0), 0.08, 0.08, 0.7, None, pants_c);
-        draw_cylinder(pos - right * 0.1 - forward * leg_swing + vec3(0.0, 0.35, 0.0), 0.08, 0.08, 0.7, None, pants_c);
+        // Legs — cubes are much faster than cylinders
+        draw_cube(pos + right * 0.1 + forward * leg_swing + vec3(0.0, 0.35, 0.0), vec3(0.16, 0.70, 0.16), None, pants_c);
+        draw_cube(pos - right * 0.1 - forward * leg_swing + vec3(0.0, 0.35, 0.0), vec3(0.16, 0.70, 0.16), None, pants_c);
 
         // Torso
         let torso_pos = pos + vec3(0.0, 1.05, 0.0);
-        draw_cylinder(torso_pos, 0.22, 0.2, 0.75, None, shirt_c);
+        draw_cube(torso_pos, vec3(0.44, 0.75, 0.40), None, shirt_c);
 
         // Head
         let head_pos = torso_pos + vec3(0.0, 0.55, 0.0);
         draw_sphere(head_pos, 0.22, None, skin_tone);
 
-        // Farm Worker Straw Hat
-        draw_cylinder(head_pos + vec3(0.0, 0.1, 0.0), 0.45, 0.45, 0.05, None, GOLD);
+        // Straw hat brim (flat cube)
+        draw_cube(head_pos + vec3(0.0, 0.1, 0.0), vec3(0.9, 0.06, 0.9), None, hat_c);
 
-        // Label above head
+        // State indicator bar above head
         let bar_center = head_pos + vec3(0.0, 0.4, 0.0);
         draw_cube(bar_center, vec3(0.8, 0.1, 0.05), None, DARKGRAY);
     }

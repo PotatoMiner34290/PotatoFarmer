@@ -68,6 +68,8 @@ pub struct Game {
     pub menu_background: Option<Texture2D>,
     pub background_file_name: Option<String>,
     pub menu_orbit_angle: f32,
+    // OBJ model for turret rendering (parsed into macroquad Mesh list)
+    pub turret_meshes: Vec<Mesh>,
 }
 
 impl Game {
@@ -100,17 +102,35 @@ impl Game {
         }
     }
 
+    pub async fn load_turret_model(&mut self) {
+        let candidate_paths = ["assets/Turret.obj", "Turret.obj"];
+        for path in candidate_paths {
+            if std::path::Path::new(path).exists() {
+                if let Ok(content) = std::fs::read_to_string(path) {
+                    let meshes = parse_obj(&content);
+                    if !meshes.is_empty() {
+                        println!("Loaded custom turret OBJ model from: {}", path);
+                        self.turret_meshes = meshes;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     pub fn start_new_game(&mut self) {
         let sfx = std::mem::replace(&mut self.sfx, SoundEffects::empty());
         let bg = self.menu_background.take();
         let bg_name = self.background_file_name.take();
         let orbit = self.menu_orbit_angle;
+        let turret_meshes = std::mem::take(&mut self.turret_meshes);
 
         *self = Self::new();
         self.sfx = sfx;
         self.menu_background = bg;
         self.background_file_name = bg_name;
         self.menu_orbit_angle = orbit;
+        self.turret_meshes = turret_meshes;
         self.state = GameState::Playing;
 
         let _ = std::fs::remove_file(SAVE_FILE);
@@ -165,6 +185,7 @@ impl Game {
                 step_cooldown: 0.0,
                 hp: 100.0,
                 max_hp: 100.0,
+                step_sound_timer: 0.0,
             },
             camera: CameraState {
                 position: cam_target + CAM_OFFSET,
@@ -228,6 +249,7 @@ impl Game {
             menu_background: None,
             background_file_name: None,
             menu_orbit_angle: 0.0,
+            turret_meshes: Vec::new(),
         }
     }
 
@@ -418,11 +440,14 @@ impl Game {
                             wander_timer:  rand::gen_range(0.0_f32, 2.0_f32),
                             rng_offset:    rand::gen_range(0_usize, GRID * GRID),
                             wait_timer:    0.0,
+                            step_timer:    rand::gen_range(0.0_f32, 0.3_f32),
+                            talk_timer:    rand::gen_range(2.0_f32, 8.0_f32),
+                            search_cooldown: 0.0,
                         });
                     }
                     self.turrets.clear();
                     for (x, y, z) in data.turret_positions {
-                        self.turrets.push(Turret { position: vec3(x, y, z), fire_cooldown: 0.0 });
+                        self.turrets.push(Turret { position: vec3(x, y, z), fire_cooldown: 0.0, angle: 0.0 });
                     }
                     self.iron_domes.clear();
                     for (x, y, z) in data.iron_dome_positions {
@@ -446,6 +471,11 @@ impl Game {
     }
 
     pub fn spawn_dirt(&mut self, pos: Vec3) {
+        // Cap total dirt particles to prevent lag spikes
+        if self.dirt.len() >= 80 {
+            let drain_count = self.dirt.len() - 60;
+            self.dirt.drain(0..drain_count);
+        }
         for _ in 0..6 {
             let shade = (60.0 + rand::gen_range(0.0, 40.0)) as u8;
             self.dirt.push(DirtParticle {
@@ -462,6 +492,11 @@ impl Game {
     }
 
     pub fn spawn_sparkles(&mut self, pos: Vec3) {
+        // Cap total sparkles to prevent lag spikes from bomber explosions
+        if self.sparkles.len() >= 80 {
+            let drain_count = self.sparkles.len() - 60;
+            self.sparkles.drain(0..drain_count);
+        }
         for _ in 0..16 {
             let life = rand::gen_range(0.6, 1.2);
             let colors = [
@@ -594,41 +629,59 @@ impl Game {
         true
     }
 
+    pub fn get_placement_cell(&self) -> Option<(usize, usize)> {
+        let f = &self.farmer;
+        let dx = f.facing.sin().round() as i32;
+        let dz = f.facing.cos().round() as i32;
+
+        let front_gx = f.grid_x + dx;
+        let front_gz = f.grid_z + dz;
+
+        // 1. Prefer cell directly in front if inside field and plowed
+        if front_gx >= 0 && front_gx < GRID as i32 && front_gz >= 0 && front_gz < GRID as i32 {
+            let fgx = front_gx as usize;
+            let fgz = front_gz as usize;
+            if self.field[fgx][fgz] == CellState::Plowed && !self.is_occupied_by_structure(fgx, fgz) {
+                return Some((fgx, fgz));
+            }
+        }
+
+        // 2. Fallback to cell under farmer if plowed
+        if f.grid_x >= 0 && f.grid_x < GRID as i32 && f.grid_z >= 0 && f.grid_z < GRID as i32 {
+            let cgx = f.grid_x as usize;
+            let cgz = f.grid_z as usize;
+            if self.field[cgx][cgz] == CellState::Plowed && !self.is_occupied_by_structure(cgx, cgz) {
+                return Some((cgx, cgz));
+            }
+        }
+
+        None
+    }
+
     pub fn place_iron_dome(&mut self) -> bool {
         if self.iron_domes_in_inventory == 0 {
             self.set_msg("No Iron Domes in inventory! Buy them at Market for 120 Potatoes.");
             return false;
         }
 
-        let place_pos = self.farmer.position;
-        // Must be on plowable soil (inside field grid)
-        let Some((gx, gz)) = Self::world_to_grid(place_pos) else {
-            self.set_msg("Iron Dome can only be placed on plowable soil inside the field!");
+        let Some((gx, gz)) = self.get_placement_cell() else {
+            self.set_msg("Iron Dome can only be placed on plowed soil! Plow a cell first (hold Space).");
             return false;
         };
-        // Require plowed soil and not already occupied
+
         if self.is_occupied_by_structure(gx, gz) {
             self.set_msg("Cell already occupied by a structure!");
             return false;
         }
-        if self.field[gx][gz] != CellState::Plowed {
-            self.set_msg("Iron Dome can only be placed on plowed soil! Plow the cell first (hold Space).");
-            return false;
-        }
 
-        if self.iron_domes.iter().any(|i| i.position.distance(place_pos) < 2.0) {
-            self.set_msg("Too close to another Iron Dome!");
-            return false;
-        }
+        let snapped = Self::cell_center(gx, gz);
 
-        if self.hits_solid_obstacle(place_pos) {
+        if self.hits_solid_obstacle(snapped) {
             self.set_msg("Cannot place Iron Dome inside an obstacle!");
             return false;
         }
 
-        // Remove plowed soil - structure occupies cell and it cannot be plowed while occupied
         self.field[gx][gz] = CellState::Grass;
-        let snapped = Self::cell_center(gx, gz);
         self.iron_domes.push(IronDome {
             position: snapped,
             cooldown: 0.0,
@@ -641,7 +694,7 @@ impl Game {
 
     pub fn pickup_iron_dome(&mut self) -> bool {
         let pos = self.farmer.position;
-        if let Some(idx) = self.iron_domes.iter().position(|d| d.position.distance(pos) < 1.8) {
+        if let Some(idx) = self.iron_domes.iter().position(|d| d.position.distance(pos) < 2.8) {
             self.iron_domes.remove(idx);
             self.iron_domes_in_inventory += 1;
             self.set_msg(&format!("Picked up Iron Dome! Inventory: {}", self.iron_domes_in_inventory));
@@ -652,7 +705,7 @@ impl Game {
 
     pub fn pickup_turret(&mut self) -> bool {
         let pos = self.farmer.position;
-        if let Some(idx) = self.turrets.iter().position(|t| t.position.distance(pos) < 1.8) {
+        if let Some(idx) = self.turrets.iter().position(|t| t.position.distance(pos) < 2.8) {
             self.turrets.remove(idx);
             self.turrets_in_inventory += 1;
             self.set_msg(&format!("Picked up Turret! Inventory: {}", self.turrets_in_inventory));
@@ -675,29 +728,36 @@ impl Game {
             return false;
         }
 
-        let place_pos = self.farmer.position;
-        // Check if a turret is already placed very close (within 1.5 units)
-        if self.turrets.iter().any(|t| t.position.distance(place_pos) < 1.5) {
-            self.set_msg("Too close to another turret!");
+        let Some((gx, gz)) = self.get_placement_cell() else {
+            self.set_msg("Turret can only be placed on plowed soil! Plow a cell first (hold Space).");
+            return false;
+        };
+
+        if self.is_occupied_by_structure(gx, gz) {
+            self.set_msg("Cell already occupied by a structure!");
             return false;
         }
 
-        if self.hits_solid_obstacle(place_pos) {
+        let snapped = Self::cell_center(gx, gz);
+
+        if self.hits_solid_obstacle(snapped) {
             self.set_msg("Cannot place turret inside an obstacle!");
             return false;
         }
 
+        self.field[gx][gz] = CellState::Grass;
         self.turrets.push(Turret {
-            position: place_pos,
+            position: snapped,
             fire_cooldown: 0.0,
+            angle: 0.0,
         });
         self.turrets_in_inventory -= 1;
-        self.spawn_sparkles(place_pos + vec3(0.0, 1.0, 0.0));
+        self.spawn_sparkles(snapped + vec3(0.0, 1.0, 0.0));
         self.set_msg(&format!("Turret placed down! (Remaining in inventory: {})", self.turrets_in_inventory));
         true
     }
 
-    // Checking if target position hits any house OR market solid bounding box
+    // Checking if target position hits any house OR market solid bounding box OR placed structures
     pub fn hits_solid_obstacle(&self, target_pos: Vec3) -> bool {
         // 1. House Solid Bounds
         for h in &self.houses {
@@ -724,6 +784,20 @@ impl Game {
         if target_pos.x >= e_min_x && target_pos.x <= e_max_x &&
            target_pos.z >= e_min_z && target_pos.z <= e_max_z {
             return true;
+        }
+
+        // 3. Placed Turrets Physical Solid Collision Box (cannot walk through)
+        for t in &self.turrets {
+            if target_pos.distance(t.position) < CELL * 0.5 {
+                return true;
+            }
+        }
+
+        // 4. Placed Iron Domes Physical Solid Collision Box (cannot walk through)
+        for d in &self.iron_domes {
+            if target_pos.distance(d.position) < CELL * 0.5 {
+                return true;
+            }
         }
 
         false
@@ -970,8 +1044,14 @@ impl Game {
         if dist > 0.001 {
             let step = (MOVE_SPEED * dt).min(dist);
             self.farmer.position += to_target.normalize() * step;
+            self.farmer.step_sound_timer += dt;
+            if self.farmer.step_sound_timer >= 0.28 {
+                self.farmer.step_sound_timer = 0.0;
+                self.sfx.play_footstep();
+            }
         } else {
             self.farmer.position = target;
+            self.farmer.step_sound_timer = 0.25;
         }
         self.farmer.position.y = 0.0;
 
@@ -1058,6 +1138,9 @@ impl Game {
                             wander_timer:  rand::gen_range(0.0_f32, 2.0_f32),
                             rng_offset:    rand::gen_range(0_usize, GRID * GRID),
                             wait_timer:    0.0,
+                            step_timer:    0.0,
+                            talk_timer:    rand::gen_range(2.0_f32, 6.0_f32),
+                            search_cooldown: 0.0,
                         });
                         self.set_msg("Hired AI Farm Worker Slave! They will auto-plant & harvest!");
                         self.save_game();
@@ -1101,23 +1184,23 @@ impl Game {
         }
 
         // --- UPDATE AI FARMER SLAVES (Smart State-Machine AI) ---
-        // Priority: harvest NEAREST mature crop first (to beat thieves), then plant.
-        // Move speed 8.0 > thief speed 6.5 so slaves can intercept.
-        // No work delay, no wander pause between jobs – slaves are always busy.
         for slave_idx in 0..self.ai_slaves.len() {
             let slave = &mut self.ai_slaves[slave_idx];
             slave.anim_timer += dt * 4.0;
             slave.action_timer += dt;
+            slave.search_cooldown = (slave.search_cooldown - dt).max(0.0);
 
-            // Helper closure: find the nearest harvestable cell to a position.
-            // Returns (gx, gz, dist_sq). Used both in Wandering and MovingToTarget.
-            // We inline it here since closures can't borrow self mutably while slave is borrowed.
+            // Audio: Random voice chatter / talk sound
+            slave.talk_timer -= dt;
+            if slave.talk_timer <= 0.0 {
+                slave.talk_timer = rand::gen_range(6.0_f32, 14.0_f32);
+                self.sfx.play_slave_talk();
+            }
 
             match slave.state.clone() {
                 // ── WAITING FOR SEEDS ──────────────────────────────────────────────
                 AiState::WaitingForSeeds => {
                     slave.wait_timer += dt;
-                    // Light aimless drift so they don't freeze solid
                     slave.wander_timer -= dt;
                     if slave.wander_timer <= 0.0 {
                         let rx = slave.position.x + rand::gen_range(-5.0_f32, 5.0_f32);
@@ -1134,8 +1217,12 @@ impl Game {
                         let dir = to_w.normalize();
                         slave.facing = dir.x.atan2(dir.z);
                         slave.position += dir * (1.5 * dt);
+                        slave.step_timer += dt;
+                        if slave.step_timer >= 0.35 {
+                            slave.step_timer = 0.0;
+                            self.sfx.play_footstep();
+                        }
                     }
-                    // Re-check often (every 0.2s) so slaves snap back to work quickly
                     if slave.wait_timer > 0.5 {
                         slave.wait_timer = 0.0;
                         let can_harvest = self.ai_slave_mode == 0 && self.field.iter().any(|row| {
@@ -1151,10 +1238,7 @@ impl Game {
                 }
 
                 // ── WANDERING / TARGET SEARCH ──────────────────────────────────────
-                // Slaves do a quick scan every tick. The moment they find a target they
-                // commit to it immediately – no wander delay between jobs.
                 AiState::Wandering => {
-                    // Light drift while between jobs (keeps them spread out)
                     slave.wander_timer -= dt;
                     if slave.wander_timer <= 0.0 {
                         let rx = slave.position.x + rand::gen_range(-6.0_f32, 6.0_f32);
@@ -1171,96 +1255,66 @@ impl Game {
                         let dir = to_w.normalize();
                         slave.facing = dir.x.atan2(dir.z);
                         slave.position += dir * (2.0 * dt);
-                    }
-
-                    // ── Smart target search: pick the NEAREST unclaimed cell needing work ──
-                    // Snapshot cells claimed by all OTHER slaves (not this one) to spread out.
-                    let claimed: Vec<(usize, usize)> = self.ai_slaves.iter().enumerate()
-                        .filter(|(i, _)| *i != slave_idx)
-                        .filter_map(|(_, s)| s.target_cell)
-                        .collect();
-                    let slave = &mut self.ai_slaves[slave_idx];
-
-                    let pos = slave.position;
-                    let mut best_harvest: Option<(usize, usize, f32)> = None; // (gx, gz, dist_sq)
-                    let mut best_plant:   Option<(usize, usize, f32)> = None;
-
-                    for gx in 0..GRID {
-                        for gz in 0..GRID {
-                            // Skip cells already targeted by another slave
-                            if claimed.contains(&(gx, gz)) { continue; }
-                            let cp = Self::cell_center(gx, gz);
-                            let dsq = (cp - pos).length_squared();
-                            match self.field[gx][gz] {
-                                CellState::Planted { growth } if growth >= 1.0 && self.ai_slave_mode == 0 => {
-                                    if best_harvest.map_or(true, |(_, _, d)| dsq < d) {
-                                        best_harvest = Some((gx, gz, dsq));
-                                    }
-                                }
-                                CellState::Plowed if self.seeds > 0 => {
-                                    if best_plant.map_or(true, |(_, _, d)| dsq < d) {
-                                        best_plant = Some((gx, gz, dsq));
-                                    }
-                                }
-                                _ => {}
-                            }
+                        slave.step_timer += dt;
+                        if slave.step_timer >= 0.35 {
+                            slave.step_timer = 0.0;
+                            self.sfx.play_footstep();
                         }
                     }
 
-                    // Harvest always takes priority over planting (beats thieves)
-                    let target = best_harvest
-                        .map(|(gx, gz, _)| (gx, gz))
-                        .or_else(|| best_plant.map(|(gx, gz, _)| (gx, gz)));
+                    // Optimized target search: run scan only when cooldown is ready
+                    if slave.search_cooldown <= 0.0 || slave.target_cell.is_none() {
+                        slave.search_cooldown = 0.15;
+                        // Use HashSet for O(1) membership test vs O(n) Vec::contains
+                        let claimed: std::collections::HashSet<(usize, usize)> = self.ai_slaves.iter().enumerate()
+                            .filter(|(i, _)| *i != slave_idx)
+                            .filter_map(|(_, s)| s.target_cell)
+                            .collect();
+                        let slave = &mut self.ai_slaves[slave_idx];
+                        let pos = slave.position;
+                        let mut best_harvest: Option<(usize, usize, f32)> = None;
+                        let mut best_plant:   Option<(usize, usize, f32)> = None;
 
-                    if let Some(t) = target {
-                        slave.target_cell = Some(t);
-                        slave.action_timer = 0.0;
-                        slave.rng_offset = (slave.rng_offset
-                            .wrapping_add(rand::gen_range(1_usize, GRID + 3)))
-                            % (GRID * GRID);
-                        slave.state = AiState::MovingToTarget;
-                    } else if self.seeds == 0 {
-                        // Nothing to harvest either – wait for seeds
-                        slave.state = AiState::WaitingForSeeds;
-                        slave.wait_timer = 0.0;
+                        for gx in 0..GRID {
+                            for gz in 0..GRID {
+                                if claimed.contains(&(gx, gz)) { continue; }
+                                let cp = Self::cell_center(gx, gz);
+                                let dsq = (cp - pos).length_squared();
+                                match self.field[gx][gz] {
+                                    CellState::Planted { growth } if growth >= 1.0 && self.ai_slave_mode == 0 => {
+                                        if best_harvest.map_or(true, |(_, _, d)| dsq < d) {
+                                            best_harvest = Some((gx, gz, dsq));
+                                        }
+                                    }
+                                    CellState::Plowed if self.seeds > 0 => {
+                                        if best_plant.map_or(true, |(_, _, d)| dsq < d) {
+                                            best_plant = Some((gx, gz, dsq));
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+
+                        let target = best_harvest
+                            .map(|(gx, gz, _)| (gx, gz))
+                            .or_else(|| best_plant.map(|(gx, gz, _)| (gx, gz)));
+
+                        if let Some(t) = target {
+                            slave.target_cell = Some(t);
+                            slave.action_timer = 0.0;
+                            slave.state = AiState::MovingToTarget;
+                        } else if self.seeds == 0 {
+                            slave.state = AiState::WaitingForSeeds;
+                            slave.wait_timer = 0.0;
+                        }
                     }
                 }
 
                 // ── MOVING TO TARGET ──────────────────────────────────────────────
                 AiState::MovingToTarget => {
                     if let Some((gx, gz)) = slave.target_cell {
-                        // Dynamic re-target: if a closer harvestable appears, switch to it.
-                        // Only check for harvest (most time-sensitive) to avoid flip-flop.
-                        if self.ai_slave_mode == 0 {
-                            let current_dist_sq = {
-                                let cp = Self::cell_center(gx, gz);
-                                (cp - slave.position).length_squared()
-                            };
-                            let mut closer: Option<(usize, usize, f32)> = None;
-                            for agx in 0..GRID {
-                                for agz in 0..GRID {
-                                    if agx == gx && agz == gz { continue; }
-                                    if let CellState::Planted { growth } = self.field[agx][agz] {
-                                        if growth >= 1.0 {
-                                            let cp = Self::cell_center(agx, agz);
-                                            let dsq = (cp - slave.position).length_squared();
-                                            // Only re-target if at least 1.5 cells closer
-                                            if dsq + (CELL * 1.5).powi(2) < current_dist_sq {
-                                                if closer.map_or(true, |(_, _, d)| dsq < d) {
-                                                    closer = Some((agx, agz, dsq));
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            if let Some((ngx, ngz, _)) = closer {
-                                slave.target_cell = Some((ngx, ngz));
-                            }
-                        }
-
-                        let (tgx, tgz) = slave.target_cell.unwrap();
-                        let cell_pos = Self::cell_center(tgx, tgz);
+                        let cell_pos = Self::cell_center(gx, gz);
                         let to_cell = cell_pos - slave.position;
                         let dist = to_cell.length();
 
@@ -1268,8 +1322,12 @@ impl Game {
                             let move_dir = to_cell.normalize();
                             slave.facing = move_dir.x.atan2(move_dir.z);
                             slave.position += move_dir * (4.0 * dt);
+                            slave.step_timer += dt;
+                            if slave.step_timer >= 0.35 {
+                                slave.step_timer = 0.0;
+                                self.sfx.play_footstep();
+                            }
                         } else {
-                            // Snap to cell centre for cleanliness
                             slave.position = vec3(cell_pos.x, slave.position.y, cell_pos.z);
                             slave.state = AiState::Working;
                             slave.action_timer = 0.0;
@@ -1280,7 +1338,6 @@ impl Game {
                 }
 
                 // ── WORKING (plant / harvest) ──────────────────────────────────────
-                // No delay – act immediately on arrival.
                 AiState::Working => {
                     if let Some((gx, gz)) = slave.target_cell {
                         match self.field[gx][gz] {
@@ -1288,6 +1345,7 @@ impl Game {
                                 if self.seeds > 0 {
                                     self.seeds -= 1;
                                     self.field[gx][gz] = CellState::Planted { growth: 0.0 };
+                                    self.sfx.play_slave_work();
                                 } else {
                                     slave.state = AiState::WaitingForSeeds;
                                     slave.target_cell = None;
@@ -1297,14 +1355,14 @@ impl Game {
                             CellState::Planted { growth } if growth >= 1.0 && self.ai_slave_mode == 0 => {
                                 self.field[gx][gz] = CellState::Plowed;
                                 self.potatoes += 1;
+                                self.sfx.play_slave_work();
                             }
-                            _ => {} // cell changed under us (thief or player) – just move on
+                            _ => {}
                         }
-                        // Immediately look for next job (no wander pause)
                         if slave.state == AiState::Working {
                             slave.target_cell = None;
                             slave.state = AiState::Wandering;
-                            slave.wander_timer = 0.0; // force immediate re-scan next tick
+                            slave.wander_timer = 0.0;
                         }
                     } else {
                         slave.state = AiState::Wandering;
@@ -1320,15 +1378,14 @@ impl Game {
         self.camera.target = self.camera.target.lerp(desired_target, t);
         self.camera.position = self.camera.target + CAM_OFFSET;
 
-        // Parallel Crop Growth using Rayon (Multi-core simulation)
-        use rayon::prelude::*;
-        self.field.par_iter_mut().for_each(|row| {
+        // Crop Growth Simulation (Optimized direct sequential loop)
+        for row in self.field.iter_mut() {
             for cell in row.iter_mut() {
                 if let CellState::Planted { growth } = cell {
                     *growth = (*growth + dt / GROW_TIME).min(1.0);
                 }
             }
-        });
+        }
 
         // Particle Physics
         for particle in self.dirt.iter_mut() {
@@ -1739,12 +1796,17 @@ impl Game {
 
                     if let Some((target_pos, _type_id)) = target_found {
                         let dir = (target_pos - t_pos).normalize();
+                        // Store horizontal aim angle so the model rotates to face the target
+                        turret.angle = dir.x.atan2(dir.z);
 
-                        self.turret_bullets.push(BulletParticle {
-                            position: t_pos,
-                            velocity: dir * 48.0,
-                            life: 0.6,
-                        });
+                        // Cap turret bullets to prevent lag during heavy fire
+                        if self.turret_bullets.len() < 60 {
+                            self.turret_bullets.push(BulletParticle {
+                                position: t_pos,
+                                velocity: dir * 48.0,
+                                life: 0.6,
+                            });
+                        }
 
                         self.sfx.play_turret_fire();
                         turret.fire_cooldown = 0.22;
@@ -1832,21 +1894,25 @@ impl Game {
                 self.bullets_count -= 1;
                 self.minigun_cooldown = 0.07; // Rapid fire auto-turret minigun!
                 let muzzle = self.farmer.position + vec3(0.0, 0.9, 0.0) + dir * 0.6;
-                self.minigun_bullets.push(MinigunBullet {
-                    position: muzzle,
-                    velocity: dir * 60.0,
-                    life: 1.0,
-                });
+                if self.minigun_bullets.len() < 80 {
+                    self.minigun_bullets.push(MinigunBullet {
+                        position: muzzle,
+                        velocity: dir * 60.0,
+                        life: 1.0,
+                    });
+                }
             } else if manual_fire {
                 self.bullets_count -= 1;
                 self.minigun_cooldown = 0.07;
                 let dir = vec3(self.farmer.facing.sin(), 0.0, self.farmer.facing.cos()).normalize();
                 let muzzle = self.farmer.position + vec3(0.0, 0.9, 0.0) + dir * 0.6;
-                self.minigun_bullets.push(MinigunBullet {
-                    position: muzzle,
-                    velocity: dir * 60.0,
-                    life: 1.0,
-                });
+                if self.minigun_bullets.len() < 80 {
+                    self.minigun_bullets.push(MinigunBullet {
+                        position: muzzle,
+                        velocity: dir * 60.0,
+                        life: 1.0,
+                    });
+                }
             }
         }
 
@@ -2119,4 +2185,119 @@ impl Game {
         }
         self.air_event.bullets.retain(|b| b.life > 0.0);
     }
+}
+
+pub fn parse_obj(obj_data: &str) -> Vec<Mesh> {
+    let mut raw_positions: Vec<Vec3> = Vec::new();
+    let mut raw_uvs: Vec<Vec2> = Vec::new();
+
+    let mut vertices: Vec<Vertex> = Vec::new();
+    let mut indices: Vec<u16> = Vec::new();
+    let mut meshes: Vec<Mesh> = Vec::new();
+
+    use std::collections::HashMap;
+    // Map (pos_idx, vt_idx, r, g, b, a) to mesh vertex index
+    let mut index_map: HashMap<(usize, usize, u8, u8, u8, u8), u16> = HashMap::new();
+
+    // Poly Pizza turret material color palette (mXKbcMPLSS)
+    let mut current_color = Color::from_rgba(180, 190, 200, 255);
+
+    for line in obj_data.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let mut parts = line.split_whitespace();
+        let cmd = match parts.next() {
+            Some(c) => c,
+            None => continue,
+        };
+
+        match cmd {
+            "usemtl" => {
+                let mat_name = parts.next().unwrap_or("").to_lowercase();
+                if mat_name.contains("red") {
+                    current_color = Color::from_rgba(235, 45, 45, 255); // Red targeting lens / accent
+                } else if mat_name.contains("metaldark") {
+                    current_color = Color::from_rgba(50, 55, 62, 255); // Dark gunmetal barrel & trim
+                } else if mat_name.contains("dark") {
+                    current_color = Color::from_rgba(28, 30, 34, 255); // Base plate & joint rubber
+                } else if mat_name.contains("metal") {
+                    current_color = Color::from_rgba(180, 190, 200, 255); // Main light steel body plating
+                } else {
+                    current_color = Color::from_rgba(160, 170, 180, 255);
+                }
+            }
+            "v" => {
+                let x: f32 = parts.next().unwrap_or("0").parse().unwrap_or(0.0);
+                let y: f32 = parts.next().unwrap_or("0").parse().unwrap_or(0.0);
+                let z: f32 = parts.next().unwrap_or("0").parse().unwrap_or(0.0);
+                raw_positions.push(vec3(x, y, z));
+            }
+            "vt" => {
+                let u: f32 = parts.next().unwrap_or("0").parse().unwrap_or(0.0);
+                let v: f32 = parts.next().unwrap_or("0").parse().unwrap_or(0.0);
+                raw_uvs.push(vec2(u, v));
+            }
+            "f" => {
+                let r = (current_color.r * 255.0) as u8;
+                let g = (current_color.g * 255.0) as u8;
+                let b = (current_color.b * 255.0) as u8;
+                let a = (current_color.a * 255.0) as u8;
+
+                let mut face_verts = Vec::new();
+                for token in parts {
+                    let mut sub = token.split('/');
+                    let v_str = sub.next().unwrap_or("");
+                    if v_str.is_empty() { continue; }
+                    let v_idx: i32 = v_str.parse().unwrap_or(0);
+                    let pos_idx = if v_idx < 0 {
+                        (raw_positions.len() as i32 + v_idx) as usize
+                    } else if v_idx > 0 {
+                        (v_idx - 1) as usize
+                    } else { 0 };
+
+                    let vt_str = sub.next().unwrap_or("");
+                    let vt_idx = if !vt_str.is_empty() {
+                        let idx: i32 = vt_str.parse().unwrap_or(0);
+                        if idx < 0 { (raw_uvs.len() as i32 + idx) as usize }
+                        else if idx > 0 { (idx - 1) as usize }
+                        else { 0 }
+                    } else { 0 };
+
+                    let key = (pos_idx, vt_idx, r, g, b, a);
+                    let idx = if let Some(&i) = index_map.get(&key) {
+                        i
+                    } else {
+                        let pos = raw_positions.get(pos_idx).copied().unwrap_or(vec3(0.0, 0.0, 0.0));
+                        let uv = raw_uvs.get(vt_idx).copied().unwrap_or(vec2(0.0, 0.0));
+                        let vertex = Vertex::new2(pos, uv, current_color);
+                        let i = vertices.len() as u16;
+                        vertices.push(vertex);
+                        index_map.insert(key, i);
+                        i
+                    };
+                    face_verts.push(idx);
+                }
+
+                for i in 1..face_verts.len().saturating_sub(1) {
+                    indices.push(face_verts[0]);
+                    indices.push(face_verts[i]);
+                    indices.push(face_verts[i + 1]);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if !vertices.is_empty() && !indices.is_empty() {
+        meshes.push(Mesh {
+            vertices,
+            indices,
+            texture: None,
+        });
+    }
+
+    meshes
 }

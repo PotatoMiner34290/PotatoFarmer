@@ -23,6 +23,9 @@ pub struct SoundEffects {
     pub iron_dome_intercept: Option<Sound>,
     pub boat_engine:         Option<Sound>,
     pub thief_giggle:        Option<Sound>,
+    pub footstep:            Option<Sound>,
+    pub slave_talk:          Option<Sound>,
+    pub slave_work:          Option<Sound>,
     pub volume:              f32,
     pub is_music_muted:      bool,
 }
@@ -38,6 +41,9 @@ impl SoundEffects {
             iron_dome_intercept: None,
             boat_engine:         None,
             thief_giggle:        None,
+            footstep:            None,
+            slave_talk:          None,
+            slave_work:          None,
             volume:              1.0,
             is_music_muted:      false,
         }
@@ -45,9 +51,6 @@ impl SoundEffects {
 
     /// Loads every sound from the `sounds/` folder, then immediately starts
     /// looping the background music track (if present).
-    ///
-    /// Each slot tries `.ogg` → `.wav` → `.flac` in order — whichever file
-    /// exists first wins. Missing / unsupported files are silently skipped.
     pub async fn load() -> Self {
         let sfx = Self {
             music:               try_load("sounds/music").await,
@@ -57,6 +60,9 @@ impl SoundEffects {
             iron_dome_intercept: try_load("sounds/iron_dome_intercept").await,
             boat_engine:         try_load("sounds/boat_engine").await,
             thief_giggle:        try_load("sounds/thief_giggle").await,
+            footstep:            try_load("sounds/footstep").await,
+            slave_talk:          try_load("sounds/slave_talk").await,
+            slave_work:          try_load("sounds/slave_work").await,
             volume:              1.0,
             is_music_muted:      false,
         };
@@ -123,6 +129,23 @@ impl SoundEffects {
     pub fn play_iron_dome_intercept(&self) { self.play_once(&self.iron_dome_intercept, 1.0); }
     pub fn play_boat_engine(&self)         { self.play(&self.boat_engine, true, 0.6); }
     pub fn play_thief_giggle(&self)        { self.play_once(&self.thief_giggle, 1.0); }
+    pub fn play_footstep(&self)            { self.play_once(&self.footstep, 0.5); }
+    pub fn play_slave_talk(&self) {
+        if self.slave_talk.is_some() {
+            self.play_once(&self.slave_talk, 0.85);
+        } else {
+            self.play_thief_giggle();
+        }
+    }
+    pub fn play_slave_work(&self) {
+        if self.slave_work.is_some() {
+            self.play_once(&self.slave_work, 0.8);
+        } else if self.slave_talk.is_some() {
+            self.play_once(&self.slave_talk, 0.7);
+        } else {
+            self.play_thief_giggle();
+        }
+    }
 }
 
 // ── Internal helpers ─────────────────────────────────────────────────────────

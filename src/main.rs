@@ -17,7 +17,7 @@ async fn main() {
     let mut game = Game::new();
     game.sfx = sfx;
     game.load_background().await;
-
+    game.load_turret_model().await;
 
     loop {
         let dt = get_frame_time();

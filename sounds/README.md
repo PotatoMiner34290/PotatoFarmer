@@ -16,6 +16,10 @@ Missing slots are silently skipped.
 | `iron_dome_intercept`   | An Iron Dome missile intercepts a rocket |                   |
 | `boat_engine`           | A gunboat is active                      | Loops             |
 | `thief_giggle`          | A thief child steals a potato            |                   |
+| `footstep`              | Player or AI slaves walk on ground       | Footstep sounds   |
+| `slave_talk`            | AI slave workers talk / chatter          | Vocal sounds      |
+| `slave_work`            | AI slave workers plant or harvest crops  | Work sound        |
+
 
 ## How to convert MP3 → OGG (free)
 

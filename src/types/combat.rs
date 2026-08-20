@@ -1,5 +1,5 @@
 use macroquad::prelude::Vec3;
-pub struct Turret{ pub position:Vec3, pub fire_cooldown:f32 }
+pub struct Turret{ pub position:Vec3, pub fire_cooldown:f32, pub angle:f32 }
 pub struct IronDome{ pub position:Vec3, pub cooldown:f32 }
 pub struct IronDomeMissile{ pub position:Vec3, pub target_pos:Vec3, pub speed:f32, pub life:f32 }
 pub struct BulletParticle{ pub position:Vec3, pub velocity:Vec3, pub life:f32 }

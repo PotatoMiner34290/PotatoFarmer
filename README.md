@@ -32,17 +32,17 @@ Till rich soil, plant and harvest potatoes, trade at local markets, defend again
 
 ---
 
-## ⚡ Real Features
+## ⚡ Features
 
 - **Dynamic Crop Simulation**: Multi-threaded parallel crop growth powered by `rayon`.
 - **Israeli Iron Dome Missile Battery**: Intercepts overhead B-2 Stealth Bombers in real-time with surface-to-air guided missiles.
 - **Crashing B-2 Stealth Bombers & Ground Drops**: Shot-down B-2 bombers plummet, tumble, and explode on farm ground, dropping rare secret loot items right where they crash.
-- **Hidden Inventory & Special Currencies**: Unlock Blood Diamonds, Cash, Panther Statues, Gold Bars, Bullets, and Heavy Miniguns. Item slots stay hidden in your inventory until shot down and picked up!
-- **Automated Heavy Minigun**: Automatically targets and shreds incoming threats (thief children, African rebels, and gunboats).
-- **Cold War African Rebel Gunboat Raids**: Gunboats patrol the river every 30s and disembark armed AK-47 rebels to attack your farm.
+- **Hidden Inventory & Special Currencies**: Unlock all sorts of stuff including a Heavy Minigun. Item slots stay hidden in your inventory until shot down and picked up! Watch out for the secret loot!
+- **Automated Heavy Minigun**: Automatically targets and shreds incoming threats (thiefs, African rebels, and gunboats).
+- **African Rebel Gunboat Raids**: Gunboats patrol the river every 30s and disembark armed AK-47 rebels to attack your farm.
 - **Dedicated Market GUI**: Dedicated shop overlay to sell precious artifacts/loot for Cash, buy ammo, and hire workers.
-- **AI Farmer Slaves**: Hire automated AI farm workers that roam your farm to plow, plant, and harvest crops automatically.
-- **Thief Children Defense**: Tanky thief children attempt to steal mature crops; defend your farm with turrets, miniguns, and Iron Domes.
+- **AI Farmers**: Hire automated AI farm workers that roam your farm to plow, plant, and harvest crops automatically.
+- **Thief Children Defense**: Tanky thiefs will attempt to steal mature crops; defend your farm with turrets, minigun, and Iron Domes.
 - **Persistent Save & Load**: Fully integrated JSON saving (`savegame.json`).
 
 ---
