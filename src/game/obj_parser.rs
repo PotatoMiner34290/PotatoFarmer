@@ -62,6 +62,17 @@ pub fn parse_obj_with_mtl(obj_data: &str, mtl_map: Option<&HashMap<String, Color
     let mut index_map: HashMap<(usize, usize, u8, u8, u8, u8), u16> = HashMap::new();
     let mut current_color = Color::from_rgba(180, 190, 200, 255);
 
+    let flush = |verts: &mut Vec<Vertex>, inds: &mut Vec<u16>, map: &mut HashMap<(usize, usize, u8, u8, u8, u8), u16>, out: &mut Vec<Mesh>| {
+        if !verts.is_empty() && !inds.is_empty() {
+            out.push(Mesh {
+                vertices: std::mem::take(verts),
+                indices: std::mem::take(inds),
+                texture: None,
+            });
+            map.clear();
+        }
+    };
+
     for line in obj_data.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -75,7 +86,11 @@ pub fn parse_obj_with_mtl(obj_data: &str, mtl_map: Option<&HashMap<String, Color
         };
 
         match cmd {
+            "o" | "g" => {
+                flush(&mut vertices, &mut indices, &mut index_map, &mut meshes);
+            }
             "usemtl" => {
+                flush(&mut vertices, &mut indices, &mut index_map, &mut meshes);
                 let mat_name = parts.next().unwrap_or("");
                 let mut found = false;
 
@@ -122,6 +137,10 @@ pub fn parse_obj_with_mtl(obj_data: &str, mtl_map: Option<&HashMap<String, Color
                 raw_uvs.push(vec2(u, v));
             }
             "f" => {
+                if indices.len() >= 1200 || vertices.len() >= 1000 {
+                    flush(&mut vertices, &mut indices, &mut index_map, &mut meshes);
+                }
+
                 let r = (current_color.r * 255.0) as u8;
                 let g = (current_color.g * 255.0) as u8;
                 let b = (current_color.b * 255.0) as u8;
@@ -172,14 +191,7 @@ pub fn parse_obj_with_mtl(obj_data: &str, mtl_map: Option<&HashMap<String, Color
         }
     }
 
-    if !vertices.is_empty() && !indices.is_empty() {
-        meshes.push(Mesh {
-            vertices,
-            indices,
-            texture: None,
-        });
-    }
-
+    flush(&mut vertices, &mut indices, &mut index_map, &mut meshes);
     meshes
 }
 
