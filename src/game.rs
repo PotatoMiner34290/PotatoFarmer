@@ -70,6 +70,8 @@ pub struct Game {
     pub menu_orbit_angle: f32,
     // OBJ model for turret rendering (parsed into macroquad Mesh list)
     pub turret_meshes: Vec<Mesh>,
+    // OBJ model for Iron Dome rendering (parsed into macroquad Mesh list with MTL materials)
+    pub iron_dome_meshes: Vec<Mesh>,
 }
 
 impl Game {
@@ -118,12 +120,44 @@ impl Game {
         }
     }
 
+    pub async fn load_iron_dome_model(&mut self) {
+        let mtl_paths = ["assets/Iron_Dome.mtl", "Iron_Dome.mtl"];
+        let mut mtl_map = None;
+        for path in mtl_paths {
+            if std::path::Path::new(path).exists() {
+                if let Ok(content) = std::fs::read_to_string(path) {
+                    let map = parse_mtl(&content);
+                    if !map.is_empty() {
+                        println!("Loaded Iron_Dome MTL material definitions from: {}", path);
+                        mtl_map = Some(map);
+                        break;
+                    }
+                }
+            }
+        }
+
+        let obj_paths = ["assets/Iron_Dome.obj", "Iron_Dome.obj"];
+        for path in obj_paths {
+            if std::path::Path::new(path).exists() {
+                if let Ok(content) = std::fs::read_to_string(path) {
+                    let meshes = parse_obj_with_mtl(&content, mtl_map.as_ref());
+                    if !meshes.is_empty() {
+                        println!("Loaded Iron_Dome OBJ model from: {}", path);
+                        self.iron_dome_meshes = meshes;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     pub fn start_new_game(&mut self) {
         let sfx = std::mem::replace(&mut self.sfx, SoundEffects::empty());
         let bg = self.menu_background.take();
         let bg_name = self.background_file_name.take();
         let orbit = self.menu_orbit_angle;
         let turret_meshes = std::mem::take(&mut self.turret_meshes);
+        let iron_dome_meshes = std::mem::take(&mut self.iron_dome_meshes);
 
         *self = Self::new();
         self.sfx = sfx;
@@ -131,6 +165,7 @@ impl Game {
         self.background_file_name = bg_name;
         self.menu_orbit_angle = orbit;
         self.turret_meshes = turret_meshes;
+        self.iron_dome_meshes = iron_dome_meshes;
         self.state = GameState::Playing;
 
         let _ = std::fs::remove_file(SAVE_FILE);
@@ -250,6 +285,7 @@ impl Game {
             background_file_name: None,
             menu_orbit_angle: 0.0,
             turret_meshes: Vec::new(),
+            iron_dome_meshes: Vec::new(),
         }
     }
 
@@ -451,7 +487,7 @@ impl Game {
                     }
                     self.iron_domes.clear();
                     for (x, y, z) in data.iron_dome_positions {
-                        self.iron_domes.push(IronDome { position: vec3(x, y, z), cooldown: 0.0 });
+                        self.iron_domes.push(IronDome { position: vec3(x, y, z), cooldown: 0.0, angle: 0.0 });
                     }
 
                     for (gx, row) in data.field.iter().enumerate().take(GRID) {
@@ -685,6 +721,7 @@ impl Game {
         self.iron_domes.push(IronDome {
             position: snapped,
             cooldown: 0.0,
+            angle: 0.0,
         });
         self.iron_domes_in_inventory -= 1;
         self.spawn_sparkles(snapped + vec3(0.0, 1.0, 0.0));
@@ -2089,6 +2126,9 @@ impl Game {
 
                 // Only shoot down B-2 Bomber when it is in range over the farm field (-26.0 <= target.x <= 15.0)
                 if target.x >= -26.0 && target.x <= 15.0 && dome_pos.distance(target) < 140.0 {
+                    let dir = (target - dome_pos).normalize();
+                    dome.angle = dir.x.atan2(dir.z);
+
                     self.iron_dome_missiles.push(IronDomeMissile {
                         position: dome_pos,
                         target_pos: target,
@@ -2187,7 +2227,59 @@ impl Game {
     }
 }
 
-pub fn parse_obj(obj_data: &str) -> Vec<Mesh> {
+use std::collections::HashMap;
+
+pub fn parse_mtl(mtl_data: &str) -> HashMap<String, Color> {
+    let mut materials = HashMap::new();
+    let mut cur_name = String::new();
+
+    for line in mtl_data.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let mut parts = line.split_whitespace();
+        let cmd = match parts.next() {
+            Some(c) => c,
+            None => continue,
+        };
+
+        match cmd {
+            "newmtl" => {
+                if let Some(name) = parts.next() {
+                    cur_name = name.to_string();
+                }
+            }
+            "Kd" => {
+                if !cur_name.is_empty() {
+                    let r: f32 = parts.next().unwrap_or("0").parse().unwrap_or(0.0);
+                    let g: f32 = parts.next().unwrap_or("0").parse().unwrap_or(0.0);
+                    let b: f32 = parts.next().unwrap_or("0").parse().unwrap_or(0.0);
+
+                    let gamma = |c: f32| -> f32 {
+                        if c <= 0.0 { 0.0 }
+                        else if c >= 1.0 { 1.0 }
+                        else { c.powf(1.0 / 2.2) }
+                    };
+
+                    let color = Color {
+                        r: gamma(r).clamp(0.0, 1.0),
+                        g: gamma(g).clamp(0.0, 1.0),
+                        b: gamma(b).clamp(0.0, 1.0),
+                        a: 1.0,
+                    };
+                    materials.insert(cur_name.clone(), color);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    materials
+}
+
+pub fn parse_obj_with_mtl(obj_data: &str, mtl_map: Option<&HashMap<String, Color>>) -> Vec<Mesh> {
     let mut raw_positions: Vec<Vec3> = Vec::new();
     let mut raw_uvs: Vec<Vec2> = Vec::new();
 
@@ -2195,11 +2287,7 @@ pub fn parse_obj(obj_data: &str) -> Vec<Mesh> {
     let mut indices: Vec<u16> = Vec::new();
     let mut meshes: Vec<Mesh> = Vec::new();
 
-    use std::collections::HashMap;
-    // Map (pos_idx, vt_idx, r, g, b, a) to mesh vertex index
     let mut index_map: HashMap<(usize, usize, u8, u8, u8, u8), u16> = HashMap::new();
-
-    // Poly Pizza turret material color palette (mXKbcMPLSS)
     let mut current_color = Color::from_rgba(180, 190, 200, 255);
 
     for line in obj_data.lines() {
@@ -2216,17 +2304,38 @@ pub fn parse_obj(obj_data: &str) -> Vec<Mesh> {
 
         match cmd {
             "usemtl" => {
-                let mat_name = parts.next().unwrap_or("").to_lowercase();
-                if mat_name.contains("red") {
-                    current_color = Color::from_rgba(235, 45, 45, 255); // Red targeting lens / accent
-                } else if mat_name.contains("metaldark") {
-                    current_color = Color::from_rgba(50, 55, 62, 255); // Dark gunmetal barrel & trim
-                } else if mat_name.contains("dark") {
-                    current_color = Color::from_rgba(28, 30, 34, 255); // Base plate & joint rubber
-                } else if mat_name.contains("metal") {
-                    current_color = Color::from_rgba(180, 190, 200, 255); // Main light steel body plating
-                } else {
-                    current_color = Color::from_rgba(160, 170, 180, 255);
+                let mat_name = parts.next().unwrap_or("");
+                let mut found = false;
+
+                if let Some(map) = mtl_map {
+                    if let Some(&col) = map.get(mat_name) {
+                        current_color = col;
+                        found = true;
+                    } else {
+                        let lower = mat_name.to_lowercase();
+                        for (key, &col) in map.iter() {
+                            if key.to_lowercase() == lower {
+                                current_color = col;
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if !found {
+                    let mat_lower = mat_name.to_lowercase();
+                    if mat_lower.contains("red") {
+                        current_color = Color::from_rgba(235, 45, 45, 255);
+                    } else if mat_lower.contains("metaldark") {
+                        current_color = Color::from_rgba(50, 55, 62, 255);
+                    } else if mat_lower.contains("dark") {
+                        current_color = Color::from_rgba(28, 30, 34, 255);
+                    } else if mat_lower.contains("metal") {
+                        current_color = Color::from_rgba(180, 190, 200, 255);
+                    } else {
+                        current_color = Color::from_rgba(160, 170, 180, 255);
+                    }
                 }
             }
             "v" => {
@@ -2300,4 +2409,8 @@ pub fn parse_obj(obj_data: &str) -> Vec<Mesh> {
     }
 
     meshes
+}
+
+pub fn parse_obj(obj_data: &str) -> Vec<Mesh> {
+    parse_obj_with_mtl(obj_data, None)
 }

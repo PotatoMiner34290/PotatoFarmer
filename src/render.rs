@@ -289,17 +289,51 @@ pub fn draw_iron_domes(game: &Game) {
             continue;
         }
 
-        // Heavy Armored Missile Launcher Base
-        draw_cube(pos + vec3(0.0, 0.4, 0.0), vec3(1.8, 0.8, 1.8), None, dome_base);
+        if !game.iron_dome_meshes.is_empty() {
+            // --- OBJ Model render ---
+            let scale = 0.9_f32;
+            let a = dome.angle;
+            let (sin_a, cos_a) = (a.sin(), a.cos());
 
-        // Angled Missile Launch Pod (2x2 Tubes)
-        draw_cube(pos + vec3(0.0, 1.1, 0.0), vec3(1.4, 0.9, 1.4), None, launcher_c);
-        draw_cylinder(pos + vec3(0.3, 1.5, 0.3), 0.12, 0.12, 0.6, None, DARKGRAY);
-        draw_cylinder(pos + vec3(-0.3, 1.5, 0.3), 0.12, 0.12, 0.6, None, DARKGRAY);
-        draw_cylinder(pos + vec3(0.3, 1.5, -0.3), 0.12, 0.12, 0.6, None, DARKGRAY);
-        draw_cylinder(pos + vec3(-0.3, 1.5, -0.3), 0.12, 0.12, 0.6, None, DARKGRAY);
-        // Radar Dish on Side
-        draw_sphere(pos + vec3(0.9, 1.0, 0.0), 0.35, None, GOLD);
+            for orig_mesh in &game.iron_dome_meshes {
+                let transformed_vertices: Vec<Vertex> = orig_mesh
+                    .vertices
+                    .iter()
+                    .map(|v| {
+                        let p = v.position * scale;
+                        let rot_x = p.x * cos_a + p.z * sin_a;
+                        let rot_z = -p.x * sin_a + p.z * cos_a;
+                        let world_pos = pos + vec3(rot_x, p.y, rot_z);
+                        Vertex {
+                            position: world_pos,
+                            uv: v.uv,
+                            color: v.color,
+                            normal: v.normal,
+                        }
+                    })
+                    .collect();
+
+                let transformed_mesh = Mesh {
+                    vertices: transformed_vertices,
+                    indices: orig_mesh.indices.clone(),
+                    texture: orig_mesh.texture.clone(),
+                };
+
+                draw_mesh(&transformed_mesh);
+            }
+        } else {
+            // Heavy Armored Missile Launcher Base
+            draw_cube(pos + vec3(0.0, 0.4, 0.0), vec3(1.8, 0.8, 1.8), None, dome_base);
+
+            // Angled Missile Launch Pod (2x2 Tubes)
+            draw_cube(pos + vec3(0.0, 1.1, 0.0), vec3(1.4, 0.9, 1.4), None, launcher_c);
+            draw_cylinder(pos + vec3(0.3, 1.5, 0.3), 0.12, 0.12, 0.6, None, DARKGRAY);
+            draw_cylinder(pos + vec3(-0.3, 1.5, 0.3), 0.12, 0.12, 0.6, None, DARKGRAY);
+            draw_cylinder(pos + vec3(0.3, 1.5, -0.3), 0.12, 0.12, 0.6, None, DARKGRAY);
+            draw_cylinder(pos + vec3(-0.3, 1.5, -0.3), 0.12, 0.12, 0.6, None, DARKGRAY);
+            // Radar Dish on Side
+            draw_sphere(pos + vec3(0.9, 1.0, 0.0), 0.35, None, GOLD);
+        }
     }
 
     // In-flight Iron Dome Missiles
