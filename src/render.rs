@@ -1108,7 +1108,7 @@ pub fn draw_hud(game: &Game) {
             draw_rectangle(slot_x + 10.0, cur_y + 18.0, 30.0, 14.0, DARKGRAY);
             draw_circle(slot_x + 35.0, cur_y + 25.0, 6.0, ORANGE);
             draw_text("READY", slot_x + 2.0, cur_y + 65.0, 16.0, ORANGE);
-            draw_text("Minigun [Auto/F]", slot_x - 10.0, cur_y + 82.0, 14.0, LIGHTGRAY);
+            draw_text("Minigun [Hold F]", slot_x - 10.0, cur_y + 82.0, 14.0, LIGHTGRAY);
         } else {
             draw_rectangle(slot_x, cur_y, icon_box_size, icon_box_size, Color::from_rgba(20, 20, 20, 200));
             draw_rectangle_lines(slot_x, cur_y, icon_box_size, icon_box_size, 1.5, DARKGRAY);
@@ -1124,7 +1124,7 @@ pub fn draw_hud(game: &Game) {
             draw_text("Press [Y] -> Restart to play again", pad_x + 30.0, cur_y + 40.0, 20.0, YELLOW);
         } else {
             draw_text(&format!("STATUS: ALIVE ({}/100 HP)", game.farmer.hp as u32), pad_x + 30.0, cur_y + 10.0, 20.0, GREEN);
-            draw_text("Controls: [TAB] / [ESC] / [V] - Toggle Menu | Minigun Auto-Fires at Threats!", pad_x + 30.0, cur_y + 40.0, 18.0, LIGHTGRAY);
+            draw_text("Controls: [TAB] / [ESC] / [V] - Toggle Menu | Hold [F] to Fire Minigun!", pad_x + 30.0, cur_y + 40.0, 18.0, LIGHTGRAY);
             draw_text("Press [Y] -> Reset & Restart", pad_x + 30.0, cur_y + 65.0, 16.0, YELLOW);
         }
         return;
@@ -1412,7 +1412,7 @@ pub fn draw_controls_overlay() {
         ("DEFENSE TURRETS", "Press [B] to place Automated Defense Turrets (costs potatoes/cash)"),
         ("IRON DOME", "Press [I] to deploy Iron Dome Missile Anti-Air Defense Battery"),
         ("PICKUP STRUCTURE", "Press [P] while near a turret or iron dome to reclaim it"),
-        ("WEAPONS / COMBAT", "Minigun auto-fires at incoming threats (Thieves, Gunboats, Jets)"),
+        ("WEAPONS / COMBAT", "Hold [F] or LMB to fire Heavy Minigun in facing direction"),
         ("SAVE / LOAD", "Press [F5] / [K] to Save Game  |  Press [F9] / [L] to Load Game"),
         ("VOLUME & PAUSE", "Ctrl + '+' / '-' for Volume  |  [ESC] or [TAB] for Pause Menu"),
     ];

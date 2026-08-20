@@ -118,7 +118,7 @@ pub fn draw_controls_overlay() {
         ("DEFENSE TURRETS", "Press [B] to place Automated Defense Turrets (costs potatoes/cash)"),
         ("IRON DOME", "Press [I] to deploy Iron Dome Missile Anti-Air Defense Battery"),
         ("PICKUP STRUCTURE", "Press [P] while near a turret or iron dome to reclaim it"),
-        ("WEAPONS / COMBAT", "Minigun auto-fires at incoming threats (Thieves, Gunboats, Jets)"),
+        ("WEAPONS / COMBAT", "Hold [F] or LMB to fire Heavy Minigun in facing direction"),
         ("SAVE / LOAD", "Press [F5] / [K] to Save Game  |  Press [F9] / [L] to Load Game"),
         ("VOLUME & PAUSE", "Ctrl + '+' / '-' for Volume  |  [ESC] or [TAB] for Pause Menu"),
     ];

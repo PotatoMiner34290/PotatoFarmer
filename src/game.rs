@@ -1380,46 +1380,12 @@ impl Game {
             self.turret_bullets.retain(|b| b.life > 0.0);
         }
 
-        // Automated & Manual Heavy Minigun Firing (Auto-targets Rebels & Gunboats only)
+        // Manual Heavy Minigun Firing (Hold [F] or Left Click to fire in facing direction)
         self.minigun_cooldown = (self.minigun_cooldown - dt).max(0.0);
         if self.minigun_unlocked && self.bullets_count > 0 && self.minigun_cooldown <= 0.0 {
-            let f_pos = self.farmer.position + vec3(0.0, 0.8, 0.0);
-
-            // Auto-Target Priority: Rebels > Gunboats (Thief Children are NOT auto-targeted)
-            let mut target_found = None;
-            for rebel in self.rebels.iter() {
-                if rebel.alive && f_pos.distance(rebel.position) < 28.0 {
-                    target_found = Some(rebel.position + vec3(0.0, 0.6, 0.0));
-                    break;
-                }
-            }
-            if target_found.is_none() {
-                for boat in self.gunboats.iter() {
-                    if boat.alive && f_pos.distance(boat.position) < 32.0 {
-                        target_found = Some(boat.position + vec3(0.0, 0.8, 0.0));
-                        break;
-                    }
-                }
-            }
-
             let manual_fire = is_mouse_button_down(MouseButton::Left) || is_key_down(KeyCode::F) || is_key_down(KeyCode::M);
 
-            if let Some(target_pos) = target_found {
-                // Auto-aim towards nearest threat
-                let dir = (target_pos - f_pos).normalize();
-                self.farmer.facing = dir.x.atan2(dir.z);
-
-                self.bullets_count -= 1;
-                self.minigun_cooldown = 0.07; // Rapid fire auto-turret minigun!
-                let muzzle = self.farmer.position + vec3(0.0, 0.9, 0.0) + dir * 0.6;
-                if self.minigun_bullets.len() < 80 {
-                    self.minigun_bullets.push(MinigunBullet {
-                        position: muzzle,
-                        velocity: dir * 60.0,
-                        life: 1.0,
-                    });
-                }
-            } else if manual_fire {
+            if manual_fire {
                 self.bullets_count -= 1;
                 self.minigun_cooldown = 0.07;
                 let dir = vec3(self.farmer.facing.sin(), 0.0, self.farmer.facing.cos()).normalize();
