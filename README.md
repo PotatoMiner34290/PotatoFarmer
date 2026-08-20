@@ -13,7 +13,7 @@ Till rich soil, plant and harvest potatoes, trade at local markets, defend again
 | **WASD / Arrow Keys** | Move step-by-step across the grid & surrounding village |
 | **Hold SPACE** | Till & plow soil rows |
 | **Press E** | Plant seed (on plowed soil) / Harvest mature potatoes |
-| **Press M or E (at Market)** | Open/Close Dedicated Market & Revolutionary Worker Shop GUI |
+| **Press M** | Open/Close Dedicated Market & Revolutionary Worker Shop GUI |
 | **Market Key 1** | Sell Panther Statues ($2,500 Cash) |
 | **Market Key 2** | Sell Blood Diamonds ($1,500 Cash) |
 | **Market Key 3** | Sell Gold Bars ($200 Cash) |

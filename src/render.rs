@@ -887,6 +887,26 @@ pub fn draw_scene(game: &Game) {
         );
     }
 
+    for smoke in &game.smoke {
+        if !game.camera.is_in_view(smoke.position, smoke.size * 2.0) {
+            continue;
+        }
+        let progress = (smoke.life / smoke.max_life).max(0.0).min(1.0);
+        let alpha = ((progress * smoke.color.a * 255.0) as u8).min(255);
+        let size = smoke.size * (0.65 + (1.0 - progress) * 0.75);
+        draw_cube(
+            smoke.position,
+            vec3(size, size, size),
+            None,
+            Color::from_rgba(
+                (smoke.color.r * 255.0) as u8,
+                (smoke.color.g * 255.0) as u8,
+                (smoke.color.b * 255.0) as u8,
+                alpha,
+            ),
+        );
+    }
+
     draw_current_tile_marker(game);
     draw_farmer_3d(&game.farmer);
     draw_ai_slaves(game);
@@ -1245,7 +1265,7 @@ pub fn draw_hud(game: &Game) {
 
         if !game.market_menu_open {
             draw_text("=== MARKET SHOP ENTERED ===", box_x + 20.0, box_y + 28.0, 20.0, GOLD);
-            draw_text("Press [M] or [E] to Open Full Dedicated Market & Worker Menu!", box_x + 20.0, box_y + 58.0, 18.0, WHITE);
+            draw_text("Press [M] to Open Market & Worker Menu!", box_x + 20.0, box_y + 58.0, 18.0, WHITE);
         } else {
             draw_text("=== DEDICATED MARKET & RYAN'S AUCTION MARTS ===", box_x + 20.0, box_y + 26.0, 20.0, GOLD);
             let slave_mode_label = if game.ai_slave_mode == 0 { "Plant & Harvest" } else { "Plant Only" };
@@ -1307,7 +1327,6 @@ pub fn draw_main_menu(game: &Game) {
         ("▶ NEW GAME [Press N / Enter]", "Start a fresh farming & defense campaign"),
         (if has_save { "💾 CONTINUE / LOAD GAME [Press L]" } else { "💾 CONTINUE / LOAD GAME (No Save Found)" }, if has_save { "Resume your saved progress" } else { "No savefile available yet" }),
         ("⌨ HOW TO PLAY & CONTROLS [Press C]", "View game mechanics, controls & keybindings"),
-        ("🖼️ CUSTOM BACKGROUND SYNTAX [Press B]", "Syntax & instructions to drop your own image"),
         ("🚪 QUIT GAME [Press Q]", "Exit to desktop"),
     ];
 
@@ -1389,7 +1408,7 @@ pub fn draw_controls_overlay() {
         ("MOVEMENT", "WASD or Arrow Keys to walk around farm field & river markets"),
         ("PLOWING SOIL", "Hold [SPACE] while moving on grass to plow soil rows"),
         ("PLANT / HARVEST", "Press [E] on plowed soil to plant seeds or harvest mature crops"),
-        ("DEDICATED MARKET", "Press [M] or [E] near Market structure to buy Worker Slaves & gear"),
+        ("DEDICATED MARKET", "Press [M] near Market structure to buy Worker Slaves & gear"),
         ("DEFENSE TURRETS", "Press [B] to place Automated Defense Turrets (costs potatoes/cash)"),
         ("IRON DOME", "Press [I] to deploy Iron Dome Missile Anti-Air Defense Battery"),
         ("PICKUP STRUCTURE", "Press [P] while near a turret or iron dome to reclaim it"),

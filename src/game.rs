@@ -1,7 +1,9 @@
-use macroquad::prelude::*;
-use std::fs::File;
-use std::io::{Read, Write};
+pub mod obj_parser;
+pub mod save_load;
+pub mod asset_loading;
+pub mod systems;
 
+use macroquad::prelude::*;
 use crate::constants::*;
 use crate::types::*;
 
@@ -11,6 +13,7 @@ pub struct Game {
     pub camera: CameraState,
     pub dirt: Vec<DirtParticle>,
     pub sparkles: Vec<SparkleParticle>,
+    pub smoke: Vec<SmokeParticle>,
     pub seeds: u32,
     pub potatoes: u32,
     pub action_cooldown: f32,
@@ -77,113 +80,6 @@ pub struct Game {
 }
 
 impl Game {
-    pub async fn load_background(&mut self) {
-        let candidate_paths = [
-            "assets/menu_bg.png",
-            "assets/menu_bg.jpg",
-            "assets/menu_background.png",
-            "assets/menu_background.jpg",
-            "assets/background.png",
-            "assets/background.jpg",
-            "menu_bg.png",
-            "menu_bg.jpg",
-            "menu_background.png",
-            "menu_background.jpg",
-            "background.png",
-            "background.jpg",
-        ];
-
-        for path in candidate_paths {
-            if std::path::Path::new(path).exists() {
-                if let Ok(tex) = load_texture(path).await {
-                    tex.set_filter(FilterMode::Linear);
-                    self.menu_background = Some(tex);
-                    self.background_file_name = Some(path.to_string());
-                    println!("Loaded custom main menu background from: {}", path);
-                    break;
-                }
-            }
-        }
-    }
-
-    pub async fn load_turret_model(&mut self) {
-        let candidate_paths = ["assets/Turret.obj", "Turret.obj"];
-        for path in candidate_paths {
-            if std::path::Path::new(path).exists() {
-                if let Ok(content) = std::fs::read_to_string(path) {
-                    let meshes = parse_obj(&content);
-                    if !meshes.is_empty() {
-                        println!("Loaded custom turret OBJ model from: {}", path);
-                        self.turret_meshes = meshes;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    pub async fn load_iron_dome_model(&mut self) {
-        let mtl_paths = ["assets/Iron_Dome.mtl", "Iron_Dome.mtl"];
-        let mut mtl_map = None;
-        for path in mtl_paths {
-            if std::path::Path::new(path).exists() {
-                if let Ok(content) = std::fs::read_to_string(path) {
-                    let map = parse_mtl(&content);
-                    if !map.is_empty() {
-                        println!("Loaded Iron_Dome MTL material definitions from: {}", path);
-                        mtl_map = Some(map);
-                        break;
-                    }
-                }
-            }
-        }
-
-        let obj_paths = ["assets/Iron_Dome.obj", "Iron_Dome.obj"];
-        for path in obj_paths {
-            if std::path::Path::new(path).exists() {
-                if let Ok(content) = std::fs::read_to_string(path) {
-                    let meshes = parse_obj_with_mtl(&content, mtl_map.as_ref());
-                    if !meshes.is_empty() {
-                        println!("Loaded Iron_Dome OBJ model from: {}", path);
-                        self.iron_dome_meshes = meshes;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    pub async fn load_iron_dome_missile_model(&mut self) {
-        let mtl_paths = ["assets/missile_iron_dome.mtl", "missile_iron_dome.mtl"];
-        let mut mtl_map = None;
-        for path in mtl_paths {
-            if std::path::Path::new(path).exists() {
-                if let Ok(content) = std::fs::read_to_string(path) {
-                    let map = parse_mtl(&content);
-                    if !map.is_empty() {
-                        println!("Loaded missile_iron_dome MTL material definitions from: {}", path);
-                        mtl_map = Some(map);
-                        break;
-                    }
-                }
-            }
-        }
-
-        let obj_paths = ["assets/missile_iron_dome.obj", "missile_iron_dome.obj"];
-        for path in obj_paths {
-            if std::path::Path::new(path).exists() {
-                if let Ok(content) = std::fs::read_to_string(path) {
-                    let meshes = parse_obj_with_mtl(&content, mtl_map.as_ref());
-                    if !meshes.is_empty() {
-                        println!("Loaded missile_iron_dome OBJ model from: {}", path);
-                        self.iron_dome_missile_meshes = meshes;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
     pub fn start_new_game(&mut self) {
         let sfx = std::mem::replace(&mut self.sfx, SoundEffects::empty());
         let bg = self.menu_background.take();
@@ -263,6 +159,7 @@ impl Game {
             },
             dirt: Vec::new(),
             sparkles: Vec::new(),
+            smoke: Vec::new(),
             seeds: 24,
             potatoes: 0,
             action_cooldown: 0.0,
@@ -389,161 +286,7 @@ impl Game {
         self.msg_timer = 3.5;
     }
 
-    pub fn save_game(&mut self) {
-        let field_save: Vec<Vec<CellStateSave>> = self
-            .field
-            .iter()
-            .map(|row| row.iter().map(|c| CellStateSave::from(*c)).collect())
-            .collect();
-
-        let turret_positions = self.turrets.iter().map(|t| (t.position.x, t.position.y, t.position.z)).collect();
-        let iron_dome_positions = self.iron_domes.iter().map(|i| (i.position.x, i.position.y, i.position.z)).collect();
-
-        let save_data = SaveData {
-            seeds: self.seeds,
-            potatoes: self.potatoes,
-            farmer_grid_x: self.farmer.grid_x,
-            farmer_grid_z: self.farmer.grid_z,
-            field: field_save,
-            turrets_unlocked: self.turrets_unlocked,
-            turrets_in_inventory: self.turrets_in_inventory,
-            turret_positions,
-            iron_dome_positions,
-            iron_domes_in_inventory: self.iron_domes_in_inventory,
-            blood_diamonds: self.blood_diamonds,
-            cash: self.cash,
-            panther_statues: self.panther_statues,
-            gold: self.gold,
-            bullets_count: self.bullets_count,
-            minigun_unlocked: self.minigun_unlocked,
-            has_unlocked_blood_diamonds: self.has_unlocked_blood_diamonds,
-            has_unlocked_cash: self.has_unlocked_cash,
-            has_unlocked_panther_statue: self.has_unlocked_panther_statue,
-            has_unlocked_gold: self.has_unlocked_gold,
-            has_unlocked_bullets: self.has_unlocked_bullets,
-            has_unlocked_minigun: self.has_unlocked_minigun,
-            ai_slaves_count: self.ai_slaves.len() as u32,
-            ai_slave_mode: self.ai_slave_mode,
-            master_volume: self.sfx.volume,
-            is_muted: self.sfx.is_music_muted,
-        };
-
-        if let Ok(json) = serde_json::to_string(&save_data) {
-            // XOR obfuscate + not normal language: needs decrypt to edit
-            const KEY: &[u8] = b"PotatoFarmer2024_Steal3x2.5s_MatureOnly";
-            let mut enc = json.into_bytes();
-            for (i, b) in enc.iter_mut().enumerate() { *b ^= KEY[i % KEY.len()]; *b = b.wrapping_add(0x5A); }
-            // Add 4-byte checksum header so tampering breaks load
-            let checksum = enc.iter().fold(0u32, |a, &b| a.wrapping_add(b as u32));
-            let mut out = Vec::with_capacity(4 + enc.len());
-            out.extend_from_slice(&checksum.to_le_bytes());
-            out.extend_from_slice(&enc);
-            if let Ok(mut file) = File::create(SAVE_FILE) {
-                if file.write_all(&out).is_ok() {
-                    self.set_msg("Game Saved!");
-                    return;
-                }
-            }
-        }
-        self.set_msg("Failed to save game!");
-    }
-
-    fn decrypt_save(bytes: &[u8]) -> Option<String> {
-        const KEY: &[u8] = b"PotatoFarmer2024_Steal3x2.5s_MatureOnly";
-        if bytes.len() < 4 { return None; }
-        let stored = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-        let enc = &bytes[4..];
-        let calc = enc.iter().fold(0u32, |a, &b| a.wrapping_add(b as u32));
-        if calc != stored { return None; }
-        let mut dec = enc.to_vec();
-        for (i, b) in dec.iter_mut().enumerate() { *b = b.wrapping_sub(0x5A); *b ^= KEY[i % KEY.len()]; }
-        String::from_utf8(dec).ok()
-    }
-
-    pub fn load_game(&mut self) -> bool {
-        // Legacy plain-JSON fallback: if file is plain JSON, decrypt will fail and we use raw UTF8
-        if let Ok(mut file) = File::open(SAVE_FILE) {
-            // Re-open as bytes
-            if let Ok(mut f2) = File::open(SAVE_FILE) {
-                use std::io::Read as _;
-                let mut buf = Vec::new();
-                if f2.read_to_end(&mut buf).is_ok() {
-                    // Try decrypt first, fallback to plain JSON for old saves
-                    let contents = Self::decrypt_save(&buf).or_else(|| String::from_utf8(buf.clone()).ok());
-                    if let Some(contents) = contents {
-                        if let Ok(data) = serde_json::from_str::<SaveData>(&contents) {
-                    self.seeds = data.seeds;
-                    self.potatoes = data.potatoes;
-                    self.farmer.grid_x = data.farmer_grid_x;
-                    self.farmer.grid_z = data.farmer_grid_z;
-                    self.farmer.position = Self::grid_to_world(self.farmer.grid_x, self.farmer.grid_z);
-                    self.turrets_unlocked = data.turrets_unlocked;
-                    self.turrets_in_inventory = data.turrets_in_inventory;
-                    self.iron_domes_in_inventory = data.iron_domes_in_inventory;
-                    self.blood_diamonds = data.blood_diamonds;
-                    self.cash = data.cash;
-                    self.panther_statues = data.panther_statues;
-                    self.gold = data.gold;
-                    self.bullets_count = data.bullets_count;
-                    self.minigun_unlocked = data.minigun_unlocked;
-                    self.has_unlocked_blood_diamonds = data.has_unlocked_blood_diamonds;
-                    self.has_unlocked_cash = data.has_unlocked_cash;
-                    self.has_unlocked_panther_statue = data.has_unlocked_panther_statue;
-                    self.has_unlocked_gold = data.has_unlocked_gold;
-                    self.has_unlocked_bullets = data.has_unlocked_bullets;
-                    self.has_unlocked_minigun = data.has_unlocked_minigun;
-                    self.ai_slave_mode = data.ai_slave_mode;
-                    self.sfx.volume = data.master_volume;
-                    self.sfx.is_music_muted = data.is_muted;
-                    self.sfx.set_volume(data.master_volume);
-                    self.ai_slaves.clear();
-                    for _ in 0..data.ai_slaves_count {
-                        let spawn_x = rand::gen_range(0, GRID);
-                        let spawn_z = rand::gen_range(0, GRID);
-                        let spawn_pos = Self::cell_center(spawn_x, spawn_z);
-                        self.ai_slaves.push(AiSlave {
-                            position:      spawn_pos,
-                            target_cell:   None,
-                            action_timer:  0.0,
-                            anim_timer:    rand::gen_range(0.0_f32, 10.0_f32),
-                            facing:        rand::gen_range(0.0_f32, std::f32::consts::TAU),
-                            state:         AiState::Wandering,
-                            wander_target: spawn_pos,
-                            wander_timer:  rand::gen_range(0.0_f32, 2.0_f32),
-                            rng_offset:    rand::gen_range(0_usize, GRID * GRID),
-                            wait_timer:    0.0,
-                            step_timer:    rand::gen_range(0.0_f32, 0.3_f32),
-                            talk_timer:    rand::gen_range(2.0_f32, 8.0_f32),
-                            search_cooldown: 0.0,
-                        });
-                    }
-                    self.turrets.clear();
-                    for (x, y, z) in data.turret_positions {
-                        self.turrets.push(Turret { position: vec3(x, y, z), fire_cooldown: 0.0, angle: 0.0 });
-                    }
-                    self.iron_domes.clear();
-                    for (x, y, z) in data.iron_dome_positions {
-                        self.iron_domes.push(IronDome { position: vec3(x, y, z), cooldown: 0.0, angle: 0.0 });
-                    }
-
-                    for (gx, row) in data.field.iter().enumerate().take(GRID) {
-                        for (gz, cell) in row.iter().enumerate().take(GRID) {
-                            self.field[gx][gz] = CellState::from(*cell);
-                        }
-                    }
-                    self.set_msg("Game Loaded from Saved File!");
-                    return true;
-                    }
-                }
-            }
-            }
-        }
-        self.set_msg("No save file found!");
-        false
-    }
-
     pub fn spawn_dirt(&mut self, pos: Vec3) {
-        // Cap total dirt particles to prevent lag spikes
         if self.dirt.len() >= 80 {
             let drain_count = self.dirt.len() - 60;
             self.dirt.drain(0..drain_count);
@@ -564,7 +307,6 @@ impl Game {
     }
 
     pub fn spawn_sparkles(&mut self, pos: Vec3) {
-        // Cap total sparkles to prevent lag spikes from bomber explosions
         if self.sparkles.len() >= 80 {
             let drain_count = self.sparkles.len() - 60;
             self.sparkles.drain(0..drain_count);
@@ -596,6 +338,30 @@ impl Game {
         }
     }
 
+    pub fn spawn_smoke(&mut self, pos: Vec3, size: f32, color: Color) {
+        if self.smoke.len() >= 400 {
+            let drain_count = self.smoke.len() - 350;
+            self.smoke.drain(0..drain_count);
+        }
+        let rx = rand::gen_range(-0.4, 0.4);
+        let ry = rand::gen_range(0.2, 0.8);
+        let rz = rand::gen_range(-0.4, 0.4);
+        let life = rand::gen_range(0.7, 1.4);
+        self.smoke.push(SmokeParticle {
+            position: pos
+                + vec3(
+                    rand::gen_range(-0.15, 0.15),
+                    rand::gen_range(-0.15, 0.15),
+                    rand::gen_range(-0.15, 0.15),
+                ),
+            velocity: vec3(rx, ry, rz),
+            life,
+            max_life: life,
+            size,
+            color,
+        });
+    }
+
     pub fn world_to_grid(pos: Vec3) -> Option<(usize, usize)> {
         let gx = ((pos.x + FIELD_HALF) / CELL).floor() as i32;
         let gz = ((pos.z + FIELD_HALF) / CELL).floor() as i32;
@@ -603,335 +369,6 @@ impl Game {
             Some((gx as usize, gz as usize))
         } else {
             None
-        }
-    }
-
-    pub fn is_occupied_by_structure(&self, gx: usize, gz: usize) -> bool {
-        let center = Self::cell_center(gx, gz);
-        let occupied = |p: Vec3| {
-            if let Some((ogx, ogz)) = Self::world_to_grid(p) {
-                ogx == gx && ogz == gz
-            } else {
-                // fallback distance check for off-grid placements (legacy)
-                p.distance(center) < CELL * 0.6
-            }
-        };
-        self.turrets.iter().any(|t| occupied(t.position)) || self.iron_domes.iter().any(|d| occupied(d.position))
-    }
-
-    pub fn plow_cell(&mut self, gx: usize, gz: usize) {
-        if self.is_occupied_by_structure(gx, gz) {
-            return;
-        }
-        if self.field[gx][gz] == CellState::Grass {
-            self.field[gx][gz] = CellState::Plowed;
-            self.spawn_dirt(Self::cell_center(gx, gz));
-        }
-    }
-
-    pub fn plant_cell(&mut self, gx: usize, gz: usize) -> bool {
-        if self.seeds == 0 {
-            self.set_msg("No seeds left! Trade potatoes at the Market.");
-            return false;
-        }
-
-        if self.field[gx][gz] == CellState::Plowed {
-            self.field[gx][gz] = CellState::Planted { growth: 0.0 };
-            self.seeds -= 1;
-            return true;
-        }
-
-        false
-    }
-
-    pub fn harvest_cell(&mut self, gx: usize, gz: usize) -> bool {
-        if let CellState::Planted { growth } = self.field[gx][gz] {
-            if growth >= 1.0 {
-                self.field[gx][gz] = CellState::Plowed;
-                self.potatoes += 1;
-                self.spawn_dirt(Self::cell_center(gx, gz));
-                return true;
-            }
-        }
-        false
-    }
-
-    pub fn convert_potatoes(&mut self) -> bool {
-        if self.potatoes == 0 {
-            self.set_msg("No potatoes to trade! Harvest mature potatoes first.");
-            return false;
-        }
-
-        let converted = self.potatoes * POTATO_TO_SEED;
-        let count = self.potatoes;
-        self.seeds += converted;
-        self.potatoes = 0;
-        let target_pos = self.active_market_pos();
-        self.spawn_sparkles(target_pos + vec3(0.0, 1.2, 0.0));
-        self.set_msg(&format!("Traded {} Potatoes for {} Seeds at Market!", count, converted));
-        true
-    }
-
-    pub fn buy_turret_upgrade(&mut self) -> bool {
-        if self.potatoes < TURRET_COST {
-            self.set_msg(&format!("Need {} Potatoes to buy a Turret! (Have {})", TURRET_COST, self.potatoes));
-            return false;
-        }
-
-        self.potatoes -= TURRET_COST;
-        self.turrets_unlocked = true;
-        self.turrets_in_inventory += 1;
-        let m_pos = self.active_market_pos();
-        self.spawn_sparkles(m_pos + vec3(0.0, 1.5, 0.0));
-        self.set_msg(&format!("Bought Turret! Inventory: {}. Walk to land & press [B] to place!", self.turrets_in_inventory));
-        true
-    }
-
-    pub fn buy_iron_dome_upgrade(&mut self) -> bool {
-        if self.potatoes < IRON_DOME_COST {
-            self.set_msg(&format!("Need {} Potatoes to buy Iron Dome! (Have {})", IRON_DOME_COST, self.potatoes));
-            return false;
-        }
-
-        self.potatoes -= IRON_DOME_COST;
-        self.iron_domes_in_inventory += 1;
-        let m_pos = self.active_market_pos();
-        self.spawn_sparkles(m_pos + vec3(0.0, 1.5, 0.0));
-        self.set_msg(&format!("Bought Iron Dome Battery! Inventory: {}. Press [I] to deploy!", self.iron_domes_in_inventory));
-        true
-    }
-
-    pub fn get_placement_cell(&self) -> Option<(usize, usize)> {
-        let f = &self.farmer;
-        let dx = f.facing.sin().round() as i32;
-        let dz = f.facing.cos().round() as i32;
-
-        let front_gx = f.grid_x + dx;
-        let front_gz = f.grid_z + dz;
-
-        // 1. Prefer cell directly in front if inside field and plowed
-        if front_gx >= 0 && front_gx < GRID as i32 && front_gz >= 0 && front_gz < GRID as i32 {
-            let fgx = front_gx as usize;
-            let fgz = front_gz as usize;
-            if self.field[fgx][fgz] == CellState::Plowed && !self.is_occupied_by_structure(fgx, fgz) {
-                return Some((fgx, fgz));
-            }
-        }
-
-        // 2. Fallback to cell under farmer if plowed
-        if f.grid_x >= 0 && f.grid_x < GRID as i32 && f.grid_z >= 0 && f.grid_z < GRID as i32 {
-            let cgx = f.grid_x as usize;
-            let cgz = f.grid_z as usize;
-            if self.field[cgx][cgz] == CellState::Plowed && !self.is_occupied_by_structure(cgx, cgz) {
-                return Some((cgx, cgz));
-            }
-        }
-
-        None
-    }
-
-    pub fn place_iron_dome(&mut self) -> bool {
-        if self.iron_domes_in_inventory == 0 {
-            self.set_msg("No Iron Domes in inventory! Buy them at Market for 120 Potatoes.");
-            return false;
-        }
-
-        let Some((gx, gz)) = self.get_placement_cell() else {
-            self.set_msg("Iron Dome can only be placed on plowed soil! Plow a cell first (hold Space).");
-            return false;
-        };
-
-        if self.is_occupied_by_structure(gx, gz) {
-            self.set_msg("Cell already occupied by a structure!");
-            return false;
-        }
-
-        let snapped = Self::cell_center(gx, gz);
-
-        if self.hits_solid_obstacle(snapped) {
-            self.set_msg("Cannot place Iron Dome inside an obstacle!");
-            return false;
-        }
-
-        self.field[gx][gz] = CellState::Grass;
-        self.iron_domes.push(IronDome {
-            position: snapped,
-            cooldown: 0.0,
-            angle: 0.0,
-        });
-        self.iron_domes_in_inventory -= 1;
-        self.spawn_sparkles(snapped + vec3(0.0, 1.0, 0.0));
-        self.set_msg(&format!("Iron Dome deployed! Auto-intercepting jet/gunboat missiles! (In hand: {})", self.iron_domes_in_inventory));
-        true
-    }
-
-    pub fn pickup_iron_dome(&mut self) -> bool {
-        let pos = self.farmer.position;
-        if let Some(idx) = self.iron_domes.iter().position(|d| d.position.distance(pos) < 2.8) {
-            self.iron_domes.remove(idx);
-            self.iron_domes_in_inventory += 1;
-            self.set_msg(&format!("Picked up Iron Dome! Inventory: {}", self.iron_domes_in_inventory));
-            return true;
-        }
-        false
-    }
-
-    pub fn pickup_turret(&mut self) -> bool {
-        let pos = self.farmer.position;
-        if let Some(idx) = self.turrets.iter().position(|t| t.position.distance(pos) < 2.8) {
-            self.turrets.remove(idx);
-            self.turrets_in_inventory += 1;
-            self.set_msg(&format!("Picked up Turret! Inventory: {}", self.turrets_in_inventory));
-            return true;
-        }
-        false
-    }
-
-    pub fn try_pickup_structure(&mut self) -> bool {
-        // Prefer Iron Dome if both nearby, otherwise turret
-        if self.pickup_iron_dome() { return true; }
-        if self.pickup_turret() { return true; }
-        self.set_msg("No turret or Iron Dome nearby to pick up!");
-        false
-    }
-
-    pub fn place_turret(&mut self) -> bool {
-        if self.turrets_in_inventory == 0 {
-            self.set_msg("No turrets in inventory! Buy them at the Market.");
-            return false;
-        }
-
-        let Some((gx, gz)) = self.get_placement_cell() else {
-            self.set_msg("Turret can only be placed on plowed soil! Plow a cell first (hold Space).");
-            return false;
-        };
-
-        if self.is_occupied_by_structure(gx, gz) {
-            self.set_msg("Cell already occupied by a structure!");
-            return false;
-        }
-
-        let snapped = Self::cell_center(gx, gz);
-
-        if self.hits_solid_obstacle(snapped) {
-            self.set_msg("Cannot place turret inside an obstacle!");
-            return false;
-        }
-
-        self.field[gx][gz] = CellState::Grass;
-        self.turrets.push(Turret {
-            position: snapped,
-            fire_cooldown: 0.0,
-            angle: 0.0,
-        });
-        self.turrets_in_inventory -= 1;
-        self.spawn_sparkles(snapped + vec3(0.0, 1.0, 0.0));
-        self.set_msg(&format!("Turret placed down! (Remaining in inventory: {})", self.turrets_in_inventory));
-        true
-    }
-
-    // Checking if target position hits any house OR market solid bounding box OR placed structures
-    pub fn hits_solid_obstacle(&self, target_pos: Vec3) -> bool {
-        // 1. House Solid Bounds
-        for h in &self.houses {
-            if target_pos.x >= h.min_x && target_pos.x <= h.max_x &&
-               target_pos.z >= h.min_z && target_pos.z <= h.max_z {
-                return true;
-            }
-        }
-
-        // 2. West & East Market Solid Bounds (3.8 x 3.8 box around market center)
-        let w_min_x = WEST_MARKET_POS.x - 2.0;
-        let w_max_x = WEST_MARKET_POS.x + 2.0;
-        let w_min_z = WEST_MARKET_POS.z - 2.0;
-        let w_max_z = WEST_MARKET_POS.z + 2.0;
-        if target_pos.x >= w_min_x && target_pos.x <= w_max_x &&
-           target_pos.z >= w_min_z && target_pos.z <= w_max_z {
-            return true;
-        }
-
-        let e_min_x = EAST_MARKET_POS.x - 2.0;
-        let e_max_x = EAST_MARKET_POS.x + 2.0;
-        let e_min_z = EAST_MARKET_POS.z - 2.0;
-        let e_max_z = EAST_MARKET_POS.z + 2.0;
-        if target_pos.x >= e_min_x && target_pos.x <= e_max_x &&
-           target_pos.z >= e_min_z && target_pos.z <= e_max_z {
-            return true;
-        }
-
-        // 3. Placed Turrets Physical Solid Collision Box (cannot walk through)
-        for t in &self.turrets {
-            if target_pos.distance(t.position) < CELL * 0.5 {
-                return true;
-            }
-        }
-
-        // 4. Placed Iron Domes Physical Solid Collision Box (cannot walk through)
-        for d in &self.iron_domes {
-            if target_pos.distance(d.position) < CELL * 0.5 {
-                return true;
-            }
-        }
-
-        false
-    }
-
-    pub fn try_step(&mut self, dx: i32, dz: i32) -> bool {
-        let nx = self.farmer.grid_x + dx;
-        let nz = self.farmer.grid_z + dz;
-        let target_pos = Self::grid_to_world(nx, nz);
-
-        // 1. INVISIBLE MAP OUTSIDE WALL BOUNDS
-        if target_pos.x < MAP_LIMIT_X_MIN || target_pos.x > MAP_LIMIT_X_MAX ||
-           target_pos.z < MAP_LIMIT_Z_MIN || target_pos.z > MAP_LIMIT_Z_MAX {
-            return false;
-        }
-
-        // 2. WATER RIVER & WOODEN BRIDGE COLLISION
-        let inside_river = target_pos.x > RIVER_X_MIN && target_pos.x < RIVER_X_MAX;
-        let on_bridge = (target_pos.z - BRIDGE_Z_CENTER).abs() < BRIDGE_Z_HALF_WIDTH;
-        if inside_river && !on_bridge {
-            return false;
-        }
-
-        // 3. HOUSE & MARKET SOLID BORDER COLLISION
-        if self.hits_solid_obstacle(target_pos) {
-            return false;
-        }
-
-        self.farmer.grid_x = nx;
-        self.farmer.grid_z = nz;
-        self.farmer.facing = (dx as f32).atan2(dz as f32);
-        self.farmer.step_cooldown = STEP_REPEAT;
-
-        true
-    }
-
-    pub fn handle_movement_input(&mut self) {
-        let target = Self::grid_to_world(self.farmer.grid_x, self.farmer.grid_z);
-        if self.farmer.position.distance(target) > 0.15 {
-            return;
-        }
-
-        if self.farmer.step_cooldown > 0.0 {
-            return;
-        }
-
-        let mut dx = 0;
-        let mut dz = 0;
-
-        if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) {
-            dz -= 1;
-        } else if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) {
-            dz += 1;
-        } else if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) {
-            dx -= 1;
-        } else if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) {
-            dx += 1;
-        }
-
-        if dx != 0 || dz != 0 {
-            self.try_step(dx, dz);
         }
     }
 
@@ -1158,7 +595,7 @@ impl Game {
 
         // Dedicated Market GUI Hotkey & Quick Actions when near market
         if self.near_market() {
-            if is_key_pressed(KeyCode::M) || is_key_pressed(KeyCode::E) {
+            if is_key_pressed(KeyCode::M) {
                 self.market_menu_open = !self.market_menu_open;
             }
 
@@ -1474,6 +911,14 @@ impl Game {
             sparkle.life -= dt;
         }
         self.sparkles.retain(|s| s.life > 0.0);
+
+        for smoke in self.smoke.iter_mut() {
+            smoke.position += smoke.velocity * dt;
+            smoke.velocity.y += 0.3 * dt;
+            smoke.velocity *= 0.96;
+            smoke.life -= dt;
+        }
+        self.smoke.retain(|s| s.life > 0.0);
 
         // Per-house choke cooldown tick
         for cd in self.house_choke_cooldowns.iter_mut() {
@@ -2116,11 +1561,12 @@ impl Game {
 
         // Update Crashing B2 Stealth Bombers (Falling, rotating, exploding on ground impact)
         let mut crashed_impacts = Vec::new();
+        let mut bomber_smoke_positions = Vec::new();
         for bomber in self.crashing_bombers.iter_mut() {
-            bomber.velocity.y -= 18.0 * dt; // Gravity pull
             bomber.position += bomber.velocity * dt;
             bomber.rotation += bomber.rot_speed * dt;
             bomber.life -= dt;
+            bomber_smoke_positions.push(bomber.position);
 
             // Check ground impact (y <= 0.2)
             if bomber.position.y <= 0.2 && bomber.life > 0.0 {
@@ -2129,6 +1575,26 @@ impl Game {
             }
         }
         self.crashing_bombers.retain(|b| b.life > 0.0);
+
+        for bpos in bomber_smoke_positions {
+            // Dark heavy smoke trail for crashing plane (bigger than missile smoke)
+            for _ in 0..2 {
+                let gray = rand::gen_range(40, 95);
+                let ssize = rand::gen_range(1.4, 2.5); // Big smoke cloud!
+                self.spawn_smoke(
+                    bpos + vec3(rand::gen_range(-1.5, 1.5), rand::gen_range(-0.5, 0.5), rand::gen_range(-1.5, 1.5)),
+                    ssize,
+                    Color::from_rgba(gray, gray, gray, 230),
+                );
+            }
+            // Fiery fire/orange core
+            let fsize = rand::gen_range(0.9, 1.6);
+            self.spawn_smoke(
+                bpos + vec3(rand::gen_range(-0.8, 0.8), rand::gen_range(-0.4, 0.4), rand::gen_range(-0.8, 0.8)),
+                fsize,
+                Color::from_rgba(255, rand::gen_range(80, 160), 30, 240),
+            );
+        }
 
         for impact_pos in crashed_impacts {
             self.spawn_sparkles(impact_pos);
@@ -2179,16 +1645,25 @@ impl Game {
 
         // Update Iron Dome Missiles & Intercepting B2 Bomber
         let mut intercept_data = None;
+        let mut missile_smoke_emits = Vec::new();
         for missile in self.iron_dome_missiles.iter_mut() {
             let dir = (missile.target_pos - missile.position).normalize();
             missile.position += dir * (missile.speed * dt);
             missile.life -= dt;
+
+            // Emit smoke behind missile nozzle
+            let trail_pos = missile.position - dir * 0.5;
+            missile_smoke_emits.push((trail_pos, rand::gen_range(0.3, 0.5)));
 
             // Intercept check against active B2 bomber
             if self.air_event.active && missile.position.distance(self.air_event.bomber_pos) < 5.0 {
                 intercept_data = Some(self.air_event.bomber_pos);
                 missile.life = 0.0;
             }
+        }
+        for (mpos, msize) in missile_smoke_emits {
+            let g = rand::gen_range(180, 220);
+            self.spawn_smoke(mpos, msize, Color::from_rgba(g, g, g, 210));
         }
         if let Some(pos) = intercept_data {
             self.spawn_sparkles(pos);
@@ -2198,20 +1673,26 @@ impl Game {
             if self.air_event.bomber_hp == 0 {
                 self.air_event.active = false; // Bomber destroyed!
 
-                // Clamp crash landing target safely within open farm field bounds
-                let safe_x = pos.x.clamp(-20.0, 18.0);
-                let safe_z = pos.z.clamp(-15.0, 15.0);
+                // Calculate velocity vector so it flies smoothly downwards from its hit position to (0, 0, 0)
+                let target = vec3(0.0, 0.0, 0.0);
+                let hit_pos = self.air_event.bomber_pos;
+                let travel_time = 2.5; // seconds to reach ground center
+                
+                // Calculate required initial horizontal and vertical velocity components
+                let vx = (target.x - hit_pos.x) / travel_time;
+                let vz = (target.z - hit_pos.z) / travel_time;
+                let vy = (target.y - hit_pos.y) / travel_time; // smooth descent velocity
 
-                // Trigger B2 Bomber crash — slow tumbling fall
+                // Trigger B2 Bomber crash — smooth diagonal descent and tumble
                 self.crashing_bombers.push(CrashingBomber {
-                    position: vec3(safe_x, pos.y, safe_z),
-                    velocity: vec3(0.0, -4.5, 0.0),
+                    position: hit_pos,
+                    velocity: vec3(vx, vy, vz),
                     rotation: 0.0,
                     rot_speed: rand::gen_range(1.5, 3.5),
-                    life: 2.0,
+                    life: travel_time + 0.5,
                 });
 
-                self.set_msg("B-2 BOMBER DESTROYED! Watch it crash slowly onto the ground!");
+                self.set_msg("B-2 BOMBER DESTROYED! Flying down into the middle of the field!");
             } else {
                 self.set_msg(&format!("B-2 BOMBER HIT! {} hits remaining before it goes down!", self.air_event.bomber_hp));
             }
@@ -2261,192 +1742,4 @@ impl Game {
         }
         self.air_event.bullets.retain(|b| b.life > 0.0);
     }
-}
-
-use std::collections::HashMap;
-
-pub fn parse_mtl(mtl_data: &str) -> HashMap<String, Color> {
-    let mut materials = HashMap::new();
-    let mut cur_name = String::new();
-
-    for line in mtl_data.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-
-        let mut parts = line.split_whitespace();
-        let cmd = match parts.next() {
-            Some(c) => c,
-            None => continue,
-        };
-
-        match cmd {
-            "newmtl" => {
-                if let Some(name) = parts.next() {
-                    cur_name = name.to_string();
-                }
-            }
-            "Kd" => {
-                if !cur_name.is_empty() {
-                    let r: f32 = parts.next().unwrap_or("0").parse().unwrap_or(0.0);
-                    let g: f32 = parts.next().unwrap_or("0").parse().unwrap_or(0.0);
-                    let b: f32 = parts.next().unwrap_or("0").parse().unwrap_or(0.0);
-
-                    let gamma = |c: f32| -> f32 {
-                        if c <= 0.0 { 0.0 }
-                        else if c >= 1.0 { 1.0 }
-                        else { c.powf(1.0 / 2.2) }
-                    };
-
-                    let color = Color {
-                        r: gamma(r).clamp(0.0, 1.0),
-                        g: gamma(g).clamp(0.0, 1.0),
-                        b: gamma(b).clamp(0.0, 1.0),
-                        a: 1.0,
-                    };
-                    materials.insert(cur_name.clone(), color);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    materials
-}
-
-pub fn parse_obj_with_mtl(obj_data: &str, mtl_map: Option<&HashMap<String, Color>>) -> Vec<Mesh> {
-    let mut raw_positions: Vec<Vec3> = Vec::new();
-    let mut raw_uvs: Vec<Vec2> = Vec::new();
-
-    let mut vertices: Vec<Vertex> = Vec::new();
-    let mut indices: Vec<u16> = Vec::new();
-    let mut meshes: Vec<Mesh> = Vec::new();
-
-    let mut index_map: HashMap<(usize, usize, u8, u8, u8, u8), u16> = HashMap::new();
-    let mut current_color = Color::from_rgba(180, 190, 200, 255);
-
-    for line in obj_data.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-
-        let mut parts = line.split_whitespace();
-        let cmd = match parts.next() {
-            Some(c) => c,
-            None => continue,
-        };
-
-        match cmd {
-            "usemtl" => {
-                let mat_name = parts.next().unwrap_or("");
-                let mut found = false;
-
-                if let Some(map) = mtl_map {
-                    if let Some(&col) = map.get(mat_name) {
-                        current_color = col;
-                        found = true;
-                    } else {
-                        let lower = mat_name.to_lowercase();
-                        for (key, &col) in map.iter() {
-                            if key.to_lowercase() == lower {
-                                current_color = col;
-                                found = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                if !found {
-                    let mat_lower = mat_name.to_lowercase();
-                    if mat_lower.contains("red") {
-                        current_color = Color::from_rgba(235, 45, 45, 255);
-                    } else if mat_lower.contains("metaldark") {
-                        current_color = Color::from_rgba(50, 55, 62, 255);
-                    } else if mat_lower.contains("dark") {
-                        current_color = Color::from_rgba(28, 30, 34, 255);
-                    } else if mat_lower.contains("metal") {
-                        current_color = Color::from_rgba(180, 190, 200, 255);
-                    } else {
-                        current_color = Color::from_rgba(160, 170, 180, 255);
-                    }
-                }
-            }
-            "v" => {
-                let x: f32 = parts.next().unwrap_or("0").parse().unwrap_or(0.0);
-                let y: f32 = parts.next().unwrap_or("0").parse().unwrap_or(0.0);
-                let z: f32 = parts.next().unwrap_or("0").parse().unwrap_or(0.0);
-                raw_positions.push(vec3(x, y, z));
-            }
-            "vt" => {
-                let u: f32 = parts.next().unwrap_or("0").parse().unwrap_or(0.0);
-                let v: f32 = parts.next().unwrap_or("0").parse().unwrap_or(0.0);
-                raw_uvs.push(vec2(u, v));
-            }
-            "f" => {
-                let r = (current_color.r * 255.0) as u8;
-                let g = (current_color.g * 255.0) as u8;
-                let b = (current_color.b * 255.0) as u8;
-                let a = (current_color.a * 255.0) as u8;
-
-                let mut face_verts = Vec::new();
-                for token in parts {
-                    let mut sub = token.split('/');
-                    let v_str = sub.next().unwrap_or("");
-                    if v_str.is_empty() { continue; }
-                    let v_idx: i32 = v_str.parse().unwrap_or(0);
-                    let pos_idx = if v_idx < 0 {
-                        (raw_positions.len() as i32 + v_idx) as usize
-                    } else if v_idx > 0 {
-                        (v_idx - 1) as usize
-                    } else { 0 };
-
-                    let vt_str = sub.next().unwrap_or("");
-                    let vt_idx = if !vt_str.is_empty() {
-                        let idx: i32 = vt_str.parse().unwrap_or(0);
-                        if idx < 0 { (raw_uvs.len() as i32 + idx) as usize }
-                        else if idx > 0 { (idx - 1) as usize }
-                        else { 0 }
-                    } else { 0 };
-
-                    let key = (pos_idx, vt_idx, r, g, b, a);
-                    let idx = if let Some(&i) = index_map.get(&key) {
-                        i
-                    } else {
-                        let pos = raw_positions.get(pos_idx).copied().unwrap_or(vec3(0.0, 0.0, 0.0));
-                        let uv = raw_uvs.get(vt_idx).copied().unwrap_or(vec2(0.0, 0.0));
-                        let vertex = Vertex::new2(pos, uv, current_color);
-                        let i = vertices.len() as u16;
-                        vertices.push(vertex);
-                        index_map.insert(key, i);
-                        i
-                    };
-                    face_verts.push(idx);
-                }
-
-                for i in 1..face_verts.len().saturating_sub(1) {
-                    indices.push(face_verts[0]);
-                    indices.push(face_verts[i]);
-                    indices.push(face_verts[i + 1]);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    if !vertices.is_empty() && !indices.is_empty() {
-        meshes.push(Mesh {
-            vertices,
-            indices,
-            texture: None,
-        });
-    }
-
-    meshes
-}
-
-pub fn parse_obj(obj_data: &str) -> Vec<Mesh> {
-    parse_obj_with_mtl(obj_data, None)
 }
