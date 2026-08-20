@@ -730,7 +730,9 @@ impl Game {
                         slave.step_timer += dt;
                         if slave.step_timer >= 0.35 {
                             slave.step_timer = 0.0;
-                            self.sfx.play_footstep();
+                            if slave_idx == 0 {
+                                self.sfx.play_footstep();
+                            }
                         }
                     }
                     if slave.wait_timer > 0.5 {
@@ -768,7 +770,9 @@ impl Game {
                         slave.step_timer += dt;
                         if slave.step_timer >= 0.35 {
                             slave.step_timer = 0.0;
-                            self.sfx.play_footstep();
+                            if slave_idx == 0 {
+                                self.sfx.play_footstep();
+                            }
                         }
                     }
 
@@ -835,7 +839,9 @@ impl Game {
                             slave.step_timer += dt;
                             if slave.step_timer >= 0.35 {
                                 slave.step_timer = 0.0;
-                                self.sfx.play_footstep();
+                                if slave_idx == 0 {
+                                    self.sfx.play_footstep();
+                                }
                             }
                         } else {
                             slave.position = vec3(cell_pos.x, slave.position.y, cell_pos.z);
